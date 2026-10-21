@@ -207,3 +207,38 @@ async def test_packets_from_one_wake_run_one_session(hass):
         again.time = info.time + 2  # another proxy's copy of the same wake
         await coordinator.async_sync(again)
     assert sum(1 for payload in cuff.received if payload[1] == 0xFA) == 1
+
+
+async def test_connect_gives_up_after_connect_timeout(hass):
+    import asyncio
+
+    from custom_components.ihealth_bp import connection
+
+    assert connection.CONNECT_TIMEOUT_S == 10
+
+    async def never_connects(*args, **kwargs):
+        await asyncio.sleep(3600)
+
+    with (
+        patch.object(connection, "CONNECT_TIMEOUT_S", 0.05),
+        patch.object(connection, "establish_connection", never_connects),
+        pytest.raises(TimeoutError),
+    ):
+        await connection.async_connect(make_service_info().device, "KN-550BT")
+
+
+async def test_connect_failure_retries_on_next_packet(hass):
+    """The cuff advertises while it measures but only accepts a connection afterwards."""
+    _, coordinator = await setup(hass)
+    first = make_service_info()
+    with patch(CONNECT, side_effect=TimeoutError("busy measuring")):
+        await coordinator.async_sync(first)
+    assert coordinator.state.failure_stage == "connect"
+    assert coordinator.needs_poll_for(first, 5.0) is True  # no 30 s wait after a connect failure
+    cuff = cuff_with_two()
+    retry = make_service_info()
+    retry.time = first.time + 5  # same wake, a few seconds later
+    with patch(CONNECT, return_value=cuff):
+        await coordinator.async_sync(retry)
+    assert cuff.readings == []
+    assert coordinator.needs_poll_for(retry, 5.0) is False  # back to once per wake

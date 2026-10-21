@@ -15,11 +15,16 @@ _LOGGER = logging.getLogger(__name__)
 
 MODEL = "KN-550BT"
 
+# The cuff advertises while it is measuring but only accepts a connection once the
+# measurement is done; give up quickly and retry on its next packet instead.
+CONNECT_TIMEOUT_S = 10
+
 
 async def async_connect(ble_device: BLEDevice, name: str) -> BleakClientWithServiceCache:
-    return await establish_connection(
-        BleakClientWithServiceCache, ble_device, name, max_attempts=2
-    )
+    async with asyncio.timeout(CONNECT_TIMEOUT_S):
+        return await establish_connection(
+            BleakClientWithServiceCache, ble_device, name, max_attempts=2
+        )
 
 
 async def async_read_model(ble_device: BLEDevice, variant: Variant) -> str | None:

@@ -76,6 +76,7 @@ class IHealthBPCoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
         self._session_lock = asyncio.Lock()
         self._closed = False
         self._last_session_adv_time: float | None = None
+        self._retry_connect = False
         super().__init__(
             hass,
             _LOGGER,
@@ -99,7 +100,9 @@ class IHealthBPCoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
     ) -> bool:
         """Connect once per wake: the cuff only advertises for ~10 s after waking."""
         return self.hass.state is CoreState.running and (
-            seconds_since_last_poll is None or seconds_since_last_poll > POLL_INTERVAL_S
+            self._retry_connect
+            or seconds_since_last_poll is None
+            or seconds_since_last_poll > POLL_INTERVAL_S
         )
 
     @callback
@@ -135,7 +138,11 @@ class IHealthBPCoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
             if self._closed:
                 return
             last = self._last_session_adv_time
-            if last is not None and 0 <= service_info.time - last < POLL_INTERVAL_S:
+            if (
+                not self._retry_connect
+                and last is not None
+                and 0 <= service_info.time - last < POLL_INTERVAL_S
+            ):
                 return  # another packet from a wake we already handled
             self._last_session_adv_time = service_info.time
             await self._async_sync_locked(service_info)
@@ -155,7 +162,10 @@ class IHealthBPCoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
                 )
                 client = await async_connect(device, self.entry.title)
             except Exception as err:
+                # Usually the cuff is still measuring; try again on its next packet.
+                self._retry_connect = True
                 raise SessionError("connect", f"{type(err).__name__}: {err}") from err
+            self._retry_connect = False
             await self._async_run(KN550BTSession(client, self.variant))
         except SessionError as err:
             self._record_failure(err.stage, str(err))
