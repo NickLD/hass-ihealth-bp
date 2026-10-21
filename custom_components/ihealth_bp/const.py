@@ -10,3 +10,4 @@ SERVICE_DELETE_READING = "delete_reading"
 
 # Seconds an advertisement must follow the previous session before we connect again.
 POLL_INTERVAL_S = 30
+CONF_VARIANT = "variant"
