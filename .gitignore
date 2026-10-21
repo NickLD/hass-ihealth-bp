@@ -1,0 +1,11 @@
+# Reverse-engineering artefacts: never publish
+apk/
+decompiled/
+decompiled.log
+native/
+# Local environments / caches
+.venv*/
+__pycache__/
+*.pyc
+.pytest_cache/
+.superpowers/
