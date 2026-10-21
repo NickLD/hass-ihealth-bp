@@ -172,3 +172,38 @@ async def test_reload_during_sync_does_not_lose_readings(hass):
     reread = CuffStore(hass, entry.unique_id)
     await reread.async_load()
     assert len(reread.visible()) == 2
+
+
+async def test_identical_advertisement_on_next_wake_triggers_sync(hass):
+    """HA drops repeated identical advertisements; every cuff wake looks the same."""
+    from homeassistant.util import dt as dt_util
+    from pytest_homeassistant_custom_component.common import async_fire_time_changed
+
+    _, coordinator = await setup(hass)
+    cuff = cuff_with_two()
+    advertise = async_get_advertisement_callback(hass)
+    with patch(CONNECT, return_value=cuff):
+        advertise(make_service_info())
+        await hass.async_block_till_done()
+        assert cuff.readings == []
+        cuff.readings.append(StoredReading(T0 + timedelta(hours=1), 130, 80, 70))
+        next_wake = make_service_info()
+        next_wake.time += 60  # a minute later, byte-for-byte the same advertisement
+        advertise(next_wake)
+        await hass.async_block_till_done()
+        async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=15))
+        await hass.async_block_till_done()
+    assert cuff.readings == []
+    assert coordinator.store.latest_imported().systolic == 130
+
+
+async def test_packets_from_one_wake_run_one_session(hass):
+    _, coordinator = await setup(hass)
+    cuff = cuff_with_two()
+    info = make_service_info()
+    with patch(CONNECT, return_value=cuff):
+        await coordinator.async_sync(info)
+        again = make_service_info()
+        again.time = info.time + 2  # another proxy's copy of the same wake
+        await coordinator.async_sync(again)
+    assert sum(1 for payload in cuff.received if payload[1] == 0xFA) == 1

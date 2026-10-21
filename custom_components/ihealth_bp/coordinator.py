@@ -8,15 +8,18 @@ from dataclasses import dataclass, replace
 from datetime import datetime
 
 from homeassistant.components.bluetooth import (
+    BluetoothChange,
     BluetoothScanningMode,
     BluetoothServiceInfoBleak,
+    async_ble_device_from_address,
+    async_register_advertisement_callback,
 )
 from homeassistant.components.bluetooth.active_update_coordinator import (
     ActiveBluetoothDataUpdateCoordinator,
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_ADDRESS
-from homeassistant.core import CoreState, HomeAssistant
+from homeassistant.core import CALLBACK_TYPE, CoreState, HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.util import dt as dt_util
@@ -69,6 +72,7 @@ class IHealthBPCoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
         self.state = CuffState()
         self._session_lock = asyncio.Lock()
         self._closed = False
+        self._last_session_adv_time: float | None = None
         super().__init__(
             hass,
             _LOGGER,
@@ -95,6 +99,27 @@ class IHealthBPCoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
             seconds_since_last_poll is None or seconds_since_last_poll > POLL_INTERVAL_S
         )
 
+    @callback
+    def async_start(self) -> CALLBACK_TYPE:
+        """Also listen to every packet: HA suppresses repeats of an unchanged
+        advertisement, and every wake of the cuff advertises exactly the same data."""
+        cancel_changes = super().async_start()
+        cancel_packets = async_register_advertisement_callback(
+            self.hass, self._async_on_packet, self.address
+        )
+
+        @callback
+        def _cancel() -> None:
+            cancel_changes()
+            cancel_packets()
+
+        return _cancel
+
+    @callback
+    def _async_on_packet(self, service_info: BluetoothServiceInfoBleak) -> None:
+        if service_info.connectable:
+            self._async_handle_bluetooth_event(service_info, BluetoothChange.ADVERTISEMENT)
+
     async def async_close(self) -> None:
         """Stop new sessions and wait for a running one, so a reload never races it."""
         self._closed = True
@@ -106,6 +131,10 @@ class IHealthBPCoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
         async with self._session_lock:
             if self._closed:
                 return
+            last = self._last_session_adv_time
+            if last is not None and 0 <= service_info.time - last < POLL_INTERVAL_S:
+                return  # another packet from a wake we already handled
+            self._last_session_adv_time = service_info.time
             await self._async_sync_locked(service_info)
 
     async def _async_sync_locked(self, service_info: BluetoothServiceInfoBleak) -> None:
@@ -113,7 +142,11 @@ class IHealthBPCoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
         client = None
         try:
             try:
-                client = await async_connect(service_info.device, self.entry.title)
+                device = (
+                    async_ble_device_from_address(self.hass, self.address, connectable=True)
+                    or service_info.device
+                )
+                client = await async_connect(device, self.entry.title)
             except Exception as err:
                 raise SessionError("connect", f"{type(err).__name__}: {err}") from err
             await self._async_run(KN550BTSession(client, self.variant))

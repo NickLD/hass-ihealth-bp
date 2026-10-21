@@ -55,10 +55,17 @@ async def async_setup_cuff(hass, *, delete=True, review=False, variant="com.jiua
     return entry, entry.runtime_data
 
 
+_wake = 0
+
+
 async def async_sync(hass, coordinator, cuff) -> None:
-    """Run one sync against a FakeCuff."""
+    """Run one sync against a FakeCuff, as a separate wake a minute after the last one."""
     from unittest.mock import patch
 
+    global _wake
+    _wake += 1
+    info = make_service_info()
+    info.time += 60 * _wake
     with patch("custom_components.ihealth_bp.coordinator.async_connect", return_value=cuff):
-        await coordinator.async_sync(make_service_info())
+        await coordinator.async_sync(info)
     await hass.async_block_till_done()
