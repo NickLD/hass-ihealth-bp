@@ -31,5 +31,11 @@
         }
       }
     }
+  },
+  "issues": {
+    "unsupported_device": {
+      "title": "Unsupported iHealth device",
+      "description": "The device at {address} reports model {model}, which is not a KN-550BT blood pressure monitor. Remove this integration entry; nothing is read from the device."
+    }
   }
 }
