@@ -1,0 +1,27 @@
+{
+  "domain": "ihealth_bp",
+  "name": "iHealth Blood Pressure",
+  "bluetooth": [
+    {
+      "service_uuid": "636f6d2e-6a69-7561-6e2e-646576000000",
+      "connectable": true
+    },
+    {
+      "service_uuid": "636f6d2e-6a69-7561-6e2e-425041563231",
+      "connectable": true
+    },
+    {
+      "service_uuid": "636f6d2e-6a69-7561-6e2e-425041563130",
+      "connectable": true
+    }
+  ],
+  "codeowners": ["@NickLD"],
+  "config_flow": true,
+  "dependencies": ["bluetooth_adapters", "recorder"],
+  "documentation": "https://github.com/NickLD/hass-ihealth-bp",
+  "integration_type": "device",
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/NickLD/hass-ihealth-bp/issues",
+  "requirements": [],
+  "version": "0.1.0"
+}
