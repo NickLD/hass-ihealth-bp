@@ -3,6 +3,7 @@
 from datetime import datetime
 
 from kn550bt import protocol as p
+from kn550bt import transport_v2 as t
 
 H = bytes.fromhex
 
@@ -18,16 +19,16 @@ OFFLINE_RX = H("a0110009a14a01001a0a150e341f3d4045000051")
 
 def test_build_frame_matches_capture():
     r1 = IDENTIFY_TX[6:22]
-    assert p.build_frame(1, p.identify_payload(r1)) == IDENTIFY_TX
-    assert p.build_frame(5, p.cmd(p.CMD_BATTERY, 0, 0, 0)) == H("b0070005a120000000c6")
+    assert t.build_frame(1, t.identify_payload(r1)) == IDENTIFY_TX
+    assert t.build_frame(5, p.cmd(p.CMD_BATTERY, 0, 0, 0)) == H("b0070005a120000000c6")
 
 
 def test_chunking_splits_at_20_bytes():
-    assert [len(c) for c in p.chunk(IDENTIFY_TX)] == [20, 3]
+    assert [len(c) for c in t.chunk(IDENTIFY_TX)] == [20, 3]
 
 
 def test_stream_parser_reassembles_split_notifications():
-    parser = p.StreamParser()
+    parser = t.StreamParser()
     assert parser.feed(CHALLENGE_RX[:20]) == []
     assert parser.feed(CHALLENGE_RX[20:40]) == []
     (pkt,) = parser.feed(CHALLENGE_RX[40:] + H("a0040003a1fda1"))[:1]
@@ -36,26 +37,26 @@ def test_stream_parser_reassembles_split_notifications():
 
 
 def test_stream_parser_drops_bad_checksum():
-    assert p.StreamParser().feed(H("a0040003a1fda2")) == []
+    assert t.StreamParser().feed(H("a0040003a1fda2")) == []
 
 
 def test_identify_answer_matches_accepted_capture():
     r1 = IDENTIFY_TX[6:22]
-    (challenge,) = p.StreamParser().feed(CHALLENGE_RX)
-    assert p.build_frame(3, p.identify_answer(challenge.data, r1)) == ANSWER_TX
+    (challenge,) = t.StreamParser().feed(CHALLENGE_RX)
+    assert t.build_frame(3, t.identify_answer(challenge.data, r1)) == ANSWER_TX
 
 
 def test_identify_rejects_wrong_r1():
-    (challenge,) = p.StreamParser().feed(CHALLENGE_RX)
+    (challenge,) = t.StreamParser().feed(CHALLENGE_RX)
     try:
-        p.identify_answer(challenge.data, bytes(16))
+        t.identify_answer(challenge.data, bytes(16))
     except ValueError:
         return
     raise AssertionError("expected R1 mismatch")
 
 
 def test_parse_av21_record():
-    (pkt,) = p.StreamParser().feed(OFFLINE_RX)
+    (pkt,) = t.StreamParser().feed(OFFLINE_RX)
     assert pkt.data[1] == 0  # no more pages
     (reading,) = p.parse_records_av21(pkt.data[2:])
     assert reading.time == datetime(2026, 10, 21, 14, 52, 31)

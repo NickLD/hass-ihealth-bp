@@ -123,3 +123,20 @@ class V1Framer:
         first = ordered[0]
         data = first[6:-1] + b"".join(f[5:-1] for f in ordered[1:])
         return [Packet(command=first[5], data=data, raw=b"".join(ordered))]
+
+
+class V1Transport:
+    """Session adapter for the legacy firmware (UNTESTED ON HARDWARE)."""
+
+    def __init__(self) -> None:
+        self._framer = V1Framer()
+
+    def encode(self, payload: bytes) -> list[bytes]:
+        return self._framer.build(payload)
+
+    def receive(self, data: bytes) -> tuple[list[Packet], list[bytes]]:
+        ack = self._framer.ack_for(data)
+        return self._framer.feed(data), [ack] if ack else []
+
+    def answer(self, challenge: bytes, r1: bytes, name: str) -> bytes:
+        return legacy_identify_answer(challenge, name)
