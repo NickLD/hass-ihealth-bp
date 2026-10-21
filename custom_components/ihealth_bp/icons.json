@@ -1,0 +1,52 @@
+{
+  "entity": {
+    "sensor": {
+      "systolic": {
+        "default": "mdi:heart-pulse"
+      },
+      "diastolic": {
+        "default": "mdi:heart-pulse"
+      },
+      "pulse": {
+        "default": "mdi:pulse"
+      },
+      "pulse_pressure": {
+        "default": "mdi:heart-pulse"
+      },
+      "mean_arterial_pressure": {
+        "default": "mdi:heart-pulse"
+      },
+      "bp_category": {
+        "default": "mdi:clipboard-pulse-outline"
+      },
+      "measured_at": {
+        "default": "mdi:clock-outline"
+      },
+      "last_sync": {
+        "default": "mdi:sync"
+      },
+      "last_failure": {
+        "default": "mdi:sync-alert"
+      },
+      "protocol": {
+        "default": "mdi:bluetooth"
+      }
+    },
+    "binary_sensor": {
+      "irregular_pulse": {
+        "default": "mdi:heart-off-outline"
+      },
+      "body_movement": {
+        "default": "mdi:run"
+      }
+    },
+    "switch": {
+      "backlight": {
+        "default": "mdi:brightness-6"
+      },
+      "clock_display": {
+        "default": "mdi:clock-digital"
+      }
+    }
+  }
+}

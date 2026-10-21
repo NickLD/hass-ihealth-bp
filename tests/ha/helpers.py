@@ -31,3 +31,34 @@ def make_service_info(
         device=BLEDevice(address, name, {}), advertisement=adv, connectable=True,
         time=time.monotonic(), tx_power=-127,
     )
+
+
+async def async_setup_cuff(hass, *, delete=True, review=False, variant="com.jiuan.dev"):
+    """Set up a config entry for the test cuff; returns (entry, coordinator)."""
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.ihealth_bp.const import (
+        CONF_DELETE_AFTER_IMPORT,
+        CONF_REVIEW_MODE,
+        DOMAIN,
+    )
+
+    await hass.config.async_set_time_zone("America/Chicago")
+    entry = MockConfigEntry(
+        domain=DOMAIN, unique_id=ADDRESS, title="KN-550BT",
+        data={"address": ADDRESS, "variant": variant},
+        options={CONF_DELETE_AFTER_IMPORT: delete, CONF_REVIEW_MODE: review},
+    )
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    return entry, entry.runtime_data
+
+
+async def async_sync(hass, coordinator, cuff) -> None:
+    """Run one sync against a FakeCuff."""
+    from unittest.mock import patch
+
+    with patch("custom_components.ihealth_bp.coordinator.async_connect", return_value=cuff):
+        await coordinator.async_sync(make_service_info())
+    await hass.async_block_till_done()

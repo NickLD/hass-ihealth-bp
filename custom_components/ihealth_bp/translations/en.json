@@ -37,5 +37,85 @@
       "title": "Unsupported iHealth device",
       "description": "The device at {address} reports model {model}, which is not a KN-550BT blood pressure monitor. Remove this integration entry; nothing is read from the device."
     }
+  },
+  "entity": {
+    "sensor": {
+      "systolic": {
+        "name": "Systolic"
+      },
+      "diastolic": {
+        "name": "Diastolic"
+      },
+      "pulse": {
+        "name": "Pulse"
+      },
+      "pulse_pressure": {
+        "name": "Pulse pressure"
+      },
+      "mean_arterial_pressure": {
+        "name": "Mean arterial pressure"
+      },
+      "bp_category": {
+        "name": "Blood pressure category",
+        "state": {
+          "normal": "Normal",
+          "elevated": "Elevated",
+          "hypertension_stage_1": "Hypertension stage 1",
+          "hypertension_stage_2": "Hypertension stage 2",
+          "hypertensive_crisis": "Hypertensive crisis"
+        }
+      },
+      "measured_at": {
+        "name": "Measured at"
+      },
+      "last_sync": {
+        "name": "Last sync"
+      },
+      "last_failure": {
+        "name": "Last failure",
+        "state_attributes": {
+          "stage": {
+            "name": "Stage"
+          },
+          "reason": {
+            "name": "Reason"
+          }
+        }
+      },
+      "protocol": {
+        "name": "Protocol",
+        "state_attributes": {
+          "untested": {
+            "name": "Untested"
+          }
+        }
+      }
+    },
+    "binary_sensor": {
+      "irregular_pulse": {
+        "name": "Irregular pulse"
+      },
+      "body_movement": {
+        "name": "Body movement"
+      }
+    },
+    "switch": {
+      "backlight": {
+        "name": "Backlight",
+        "state_attributes": {
+          "pending": {
+            "name": "Pending until the cuff next connects"
+          }
+        }
+      },
+      "clock_display": {
+        "name": "Clock display",
+        "state_attributes": {
+          "pending": {
+            "name": "Pending until the cuff next connects"
+          }
+        }
+      }
+    }
   }
 }

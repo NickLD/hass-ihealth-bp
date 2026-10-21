@@ -6,19 +6,15 @@ from unittest.mock import patch
 import pytest
 from homeassistant.components.bluetooth import async_get_advertisement_callback
 from homeassistant.helpers import issue_registry as ir
-from pytest_homeassistant_custom_component.common import MockConfigEntry, async_capture_events
+from pytest_homeassistant_custom_component.common import async_capture_events
 
-from custom_components.ihealth_bp.const import (
-    CONF_DELETE_AFTER_IMPORT,
-    CONF_REVIEW_MODE,
-    DOMAIN,
-    EVENT_MEASUREMENT,
-)
+from custom_components.ihealth_bp.const import DOMAIN, EVENT_MEASUREMENT
 from custom_components.ihealth_bp.kn550bt.session import DisplaySettings
 from custom_components.ihealth_bp.storage import ReadingStatus
 
 from ..kn550bt.fake_cuff import FakeCuff, StoredReading
-from .conftest import ADDRESS
+from .helpers import async_setup_cuff as setup
+from .helpers import async_sync as sync
 from .helpers import make_service_info
 
 CONNECT = "custom_components.ihealth_bp.coordinator.async_connect"
@@ -30,25 +26,6 @@ def cuff_with_two() -> FakeCuff:
         StoredReading(T0, 125, 64, 69),
         StoredReading(T0 + timedelta(minutes=16, seconds=31), 121, 71, 68, arrhythmia=True),
     ])
-
-
-async def setup(hass, *, delete=True, review=False):
-    await hass.config.async_set_time_zone("America/Chicago")
-    entry = MockConfigEntry(
-        domain=DOMAIN, unique_id=ADDRESS, title="KN-550BT",
-        data={"address": ADDRESS, "variant": "com.jiuan.dev"},
-        options={CONF_DELETE_AFTER_IMPORT: delete, CONF_REVIEW_MODE: review},
-    )
-    entry.add_to_hass(hass)
-    assert await hass.config_entries.async_setup(entry.entry_id)
-    await hass.async_block_till_done()
-    return entry, entry.runtime_data
-
-
-async def sync(hass, coordinator, cuff):
-    with patch(CONNECT, return_value=cuff):
-        await coordinator.async_sync(make_service_info())
-    await hass.async_block_till_done()
 
 
 async def test_sync_imports_events_and_deletes(hass):
