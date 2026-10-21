@@ -116,6 +116,38 @@
           }
         }
       }
+    },
+    "todo": {
+      "readings": {
+        "name": "Readings"
+      }
+    }
+  },
+  "services": {
+    "delete_reading": {
+      "name": "Delete reading",
+      "description": "Deletes a blood pressure reading from Home Assistant (its statistics and the Readings list). Events already fired are not undone.",
+      "fields": {
+        "device_id": {
+          "name": "Device",
+          "description": "The blood pressure monitor."
+        },
+        "measured_at": {
+          "name": "Measured at",
+          "description": "When the reading was taken (local time, to the second)."
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "reading_not_found": {
+      "message": "No reading was found at that time."
+    },
+    "device_not_found": {
+      "message": "That device is not a loaded iHealth Blood Pressure monitor."
+    },
+    "item_change_not_allowed": {
+      "message": "Readings cannot be renamed or un-ticked. Tick a pending reading to import it, or delete it."
     }
   }
 }

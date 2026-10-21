@@ -1,0 +1,11 @@
+delete_reading:
+  fields:
+    device_id:
+      required: true
+      selector:
+        device:
+          integration: ihealth_bp
+    measured_at:
+      required: true
+      selector:
+        datetime:

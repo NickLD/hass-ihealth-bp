@@ -47,6 +47,16 @@
       "clock_display": {
         "default": "mdi:clock-digital"
       }
+    },
+    "todo": {
+      "readings": {
+        "default": "mdi:format-list-checks"
+      }
+    }
+  },
+  "services": {
+    "delete_reading": {
+      "service": "mdi:delete-outline"
     }
   }
 }

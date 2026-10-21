@@ -184,6 +184,26 @@ class IHealthBPCoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
             self.hass, self.address, self.entry.title, self.store.imported(), hours
         )
 
+    async def async_delete_reading(self, uid: str) -> None:
+        """Delete a reading from Home Assistant (it is never re-imported)."""
+        reading = self.store.find(uid)
+        if reading is None or reading.status is ReadingStatus.DELETED:
+            raise KeyError(uid)
+        await self.store.async_set_status(uid, ReadingStatus.DELETED)
+        if reading.status is ReadingStatus.IMPORTED:
+            await self.async_refresh_statistics({reading.measured_at})
+        self.async_update_listeners()
+
+    async def async_approve_reading(self, uid: str) -> None:
+        """Import a reading held for review."""
+        reading = self.store.find(uid)
+        if reading is None or reading.status is not ReadingStatus.PENDING:
+            raise KeyError(uid)
+        imported = await self.store.async_set_status(uid, ReadingStatus.IMPORTED)
+        self.fire_measurement_event(imported)
+        await self.async_refresh_statistics({imported.measured_at})
+        self.async_update_listeners()
+
     async def async_request_display(self, settings: DisplaySettings) -> None:
         """Remember a display change; it is applied the next time the cuff connects."""
         await self.store.async_set_pending_display(settings)
