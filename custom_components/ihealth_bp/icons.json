@@ -30,6 +30,9 @@
       },
       "protocol": {
         "default": "mdi:bluetooth"
+      },
+      "connected_via": {
+        "default": "mdi:access-point"
       }
     },
     "binary_sensor": {

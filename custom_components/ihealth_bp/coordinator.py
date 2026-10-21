@@ -12,7 +12,9 @@ from homeassistant.components.bluetooth import (
     BluetoothScanningMode,
     BluetoothServiceInfoBleak,
     async_ble_device_from_address,
+    async_last_service_info,
     async_register_advertisement_callback,
+    async_scanner_by_source,
 )
 from homeassistant.components.bluetooth.active_update_coordinator import (
     ActiveBluetoothDataUpdateCoordinator,
@@ -58,6 +60,7 @@ class CuffState:
     failure_stage: str | None = None
     failure_reason: str | None = None
     rssi: int | None = None
+    proxy: str | None = None
 
 
 class IHealthBPCoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
@@ -138,7 +141,11 @@ class IHealthBPCoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
             await self._async_sync_locked(service_info)
 
     async def _async_sync_locked(self, service_info: BluetoothServiceInfoBleak) -> None:
-        self.state.rssi = service_info.rssi
+        # HA connects through its current best connectable path to the cuff.
+        best = async_last_service_info(self.hass, self.address, connectable=True) or service_info
+        scanner = async_scanner_by_source(self.hass, best.source)
+        self.state.rssi = best.rssi
+        self.state.proxy = scanner.name if scanner else best.source
         client = None
         try:
             try:

@@ -103,6 +103,10 @@ STATE_SENSORS = (
         value_fn=lambda c: c.state.last_failure, attrs_fn=_failure_attrs,
     ),
     StateSensorDescription(
+        key="connected_via", translation_key="connected_via",
+        entity_category=EntityCategory.DIAGNOSTIC, value_fn=lambda c: c.state.proxy,
+    ),
+    StateSensorDescription(
         key="signal_strength", device_class=SensorDeviceClass.SIGNAL_STRENGTH,
         native_unit_of_measurement=SIGNAL_STRENGTH_DECIBELS_MILLIWATT,
         entity_category=EntityCategory.DIAGNOSTIC, entity_registry_enabled_default=False,
@@ -147,7 +151,7 @@ class StateSensor(IHealthBPEntity, RestoreSensor):
     @property
     def native_value(self) -> Any:
         value = self.entity_description.value_fn(self.coordinator)
-        if value is None and isinstance(self._restored, (int, float, datetime)):
+        if value is None and isinstance(self._restored, (int, float, str, datetime)):
             return self._restored
         return value
 

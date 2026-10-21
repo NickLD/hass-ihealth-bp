@@ -78,7 +78,7 @@ best and, in one short session:
 | Battery | Updated each sync |
 | Backlight, Clock display (switches) | Applied the next time the cuff connects; `pending: true` until then |
 | Readings (to-do list) | Every reading, newest first — see below |
-| Protocol, Last sync, Last failure, Signal strength | Diagnostics (signal strength is disabled by default) |
+| Protocol, Last sync, Last failure, Connected via, Signal strength | Diagnostics: *Connected via* names the adapter/proxy used for the last session (signal strength is disabled by default) |
 
 Sensor values survive restarts. The measurement sensors deliberately have no `state_class`; long-term
 history is recorded separately at the time each reading was **taken** (see Statistics).

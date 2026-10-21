@@ -89,6 +89,9 @@
             "name": "Untested"
           }
         }
+      },
+      "connected_via": {
+        "name": "Connected via"
       }
     },
     "binary_sensor": {

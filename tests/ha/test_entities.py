@@ -157,3 +157,22 @@ async def test_diagnostics_has_no_reading_values_or_mac(hass):
     assert "recent_readings" not in diag
     assert "125" not in text and "121" not in text
     assert diag["readings"]["imported"] == 2
+
+
+async def test_connected_via_shows_proxy_used(hass):
+    from types import SimpleNamespace
+    from unittest.mock import patch
+
+    from .helpers import make_service_info
+
+    _, coordinator = await async_setup_cuff(hass)
+    best = make_service_info(rssi=-71)
+    best.source = "AA:BB:CC:DD:EE:01"
+    scanner = SimpleNamespace(name="office-proxy (AA:BB:CC:DD:EE:01)")
+    with (
+        patch("custom_components.ihealth_bp.coordinator.async_last_service_info", return_value=best),
+        patch("custom_components.ihealth_bp.coordinator.async_scanner_by_source", return_value=scanner),
+    ):
+        await async_sync(hass, coordinator, cuff_with_two())
+    assert state(hass, f"sensor.{P}_connected_via").state == "office-proxy (AA:BB:CC:DD:EE:01)"
+    assert coordinator.state.rssi == -71
