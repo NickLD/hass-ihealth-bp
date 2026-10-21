@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 
 from homeassistant.components.bluetooth import (
@@ -66,6 +67,8 @@ class IHealthBPCoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
         self.address: str = entry.data[CONF_ADDRESS]
         self.variant = Variant(entry.data.get(CONF_VARIANT, Variant.DEV.value))
         self.state = CuffState()
+        self._session_lock = asyncio.Lock()
+        self._closed = False
         super().__init__(
             hass,
             _LOGGER,
@@ -92,8 +95,20 @@ class IHealthBPCoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
             seconds_since_last_poll is None or seconds_since_last_poll > POLL_INTERVAL_S
         )
 
+    async def async_close(self) -> None:
+        """Stop new sessions and wait for a running one, so a reload never races it."""
+        self._closed = True
+        async with self._session_lock:
+            pass
+
     async def async_sync(self, service_info: BluetoothServiceInfoBleak) -> None:
         """One complete session. Never raises: failures are recorded for diagnostics."""
+        async with self._session_lock:
+            if self._closed:
+                return
+            await self._async_sync_locked(service_info)
+
+    async def _async_sync_locked(self, service_info: BluetoothServiceInfoBleak) -> None:
         self.state.rssi = service_info.rssi
         client = None
         try:
@@ -137,21 +152,30 @@ class IHealthBPCoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
         self.state.capabilities = await session.set_clock(dt_util.now().replace(tzinfo=None))
         self.state.battery = await session.battery()
         display = await session.get_display()
-        pending = self.store.pending_display
-        if pending is not None:
-            if pending != display:
-                await session.set_display(pending)
-                display = pending
-            await self.store.async_set_pending_display(None)
+        pending = dict(self.store.pending_display)
+        if pending:
+            wanted = replace(display, **pending)
+            if wanted != display:
+                await session.set_display(wanted)
+                display = wanted
+            await self.store.async_clear_pending_display(pending)
         self.state.display = display
 
-        readings = await session.read_readings()
+        download = await session.read_readings()
+        readings = download.readings
         added = await self.store.async_add(readings, review=self.review_mode)
         imported = [r for r in added if r.status is ReadingStatus.IMPORTED]
         for reading in imported:
             self.fire_measurement_event(reading)
         if imported:
             await self.async_refresh_statistics({r.measured_at for r in imported})
+        if not download.complete:
+            # Never send the delete command after a partial download: it wipes everything.
+            raise SessionError(
+                "readings",
+                f"incomplete download ({len(readings)} of {download.expected} readings); "
+                "nothing was deleted from the cuff",
+            )
         if self.delete_after_import and readings:
             await session.delete_readings()
 
@@ -204,7 +228,7 @@ class IHealthBPCoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
         await self.async_refresh_statistics({imported.measured_at})
         self.async_update_listeners()
 
-    async def async_request_display(self, settings: DisplaySettings) -> None:
+    async def async_request_display(self, field: str, value: bool) -> None:
         """Remember a display change; it is applied the next time the cuff connects."""
-        await self.store.async_set_pending_display(settings)
+        await self.store.async_set_pending_display(field, value)
         self.async_update_listeners()

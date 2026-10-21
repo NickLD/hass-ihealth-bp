@@ -13,7 +13,6 @@ from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN
 from .kn550bt.protocol import Reading
-from .kn550bt.session import DisplaySettings
 
 STORAGE_VERSION = 1
 
@@ -71,28 +70,26 @@ def cuff_time_to_utc(naive: datetime) -> datetime:
 
 
 class CuffStore:
-    def __init__(self, hass: HomeAssistant, entry_id: str) -> None:
-        self._store: Store[dict[str, Any]] = Store(hass, STORAGE_VERSION, f"{DOMAIN}.{entry_id}")
+    """Keyed by the cuff's address, so the log survives removing and re-adding the entry."""
+
+    def __init__(self, hass: HomeAssistant, address: str) -> None:
+        key = f"{DOMAIN}.{address.replace(':', '').lower()}"
+        self._store: Store[dict[str, Any]] = Store(hass, STORAGE_VERSION, key)
         self._readings: dict[str, LoggedReading] = {}
-        self._pending_display: DisplaySettings | None = None
+        self._pending_display: dict[str, bool] = {}
 
     async def async_load(self) -> None:
         data = await self._store.async_load() or {}
         self._readings = {
             r["uid"]: LoggedReading.from_dict(r) for r in data.get("readings", [])
         }
-        pending = data.get("pending_display")
-        self._pending_display = DisplaySettings(**pending) if pending else None
+        self._pending_display = dict(data.get("pending_display") or {})
 
     async def _async_save(self) -> None:
         await self._store.async_save(
             {
                 "readings": [r.as_dict() for r in self._readings.values()],
-                "pending_display": (
-                    {"backlight": self._pending_display.backlight, "clock": self._pending_display.clock}
-                    if self._pending_display
-                    else None
-                ),
+                "pending_display": dict(self._pending_display),
             }
         )
 
@@ -152,9 +149,17 @@ class CuffStore:
         return imported[0] if imported else None
 
     @property
-    def pending_display(self) -> DisplaySettings | None:
+    def pending_display(self) -> dict[str, bool]:
+        """Display fields ("backlight", "clock") changed in HA but not yet sent to the cuff."""
         return self._pending_display
 
-    async def async_set_pending_display(self, settings: DisplaySettings | None) -> None:
-        self._pending_display = settings
+    async def async_set_pending_display(self, field: str, value: bool) -> None:
+        self._pending_display = {**self._pending_display, field: value}
+        await self._async_save()
+
+    async def async_clear_pending_display(self, applied: dict[str, bool]) -> None:
+        """Forget applied changes, keeping any made while they were being applied."""
+        self._pending_display = {
+            k: v for k, v in self._pending_display.items() if applied.get(k) != v
+        }
         await self._async_save()

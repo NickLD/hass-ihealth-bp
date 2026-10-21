@@ -5,7 +5,6 @@ from datetime import UTC, datetime
 from homeassistant.util import dt as dt_util
 
 from custom_components.ihealth_bp.kn550bt.protocol import Reading
-from custom_components.ihealth_bp.kn550bt.session import DisplaySettings
 from custom_components.ihealth_bp.storage import CuffStore, ReadingStatus, reading_uid
 
 R1 = Reading(datetime(2026, 10, 21, 14, 52, 31), 125, 64, 69, arrhythmia=False, body_movement=False)
@@ -58,10 +57,10 @@ async def test_latest_imported_ignores_pending_and_deleted(hass):
 async def test_store_round_trip_after_reload(hass):
     store = await new_store(hass)
     await store.async_add([R1, R2], review=False)
-    await store.async_set_pending_display(DisplaySettings(backlight=False, clock=True))
+    await store.async_set_pending_display("backlight", False)
     reloaded = await new_store(hass)
     assert [r.uid for r in reloaded.visible()] == [reading_uid(R2), reading_uid(R1)]
-    assert reloaded.pending_display == DisplaySettings(backlight=False, clock=True)
+    assert reloaded.pending_display == {"backlight": False}
     assert reloaded.find_by_time(store.find(reading_uid(R1)).measured_at).uid == reading_uid(R1)
 
 
@@ -74,3 +73,13 @@ async def test_dst_ambiguous_time_round_trip(hass):
     assert dt_util.as_local(added.measured_at).replace(tzinfo=None) == ambiguous.time
     reloaded = await new_store(hass)
     assert reloaded.find(added.uid).measured_at == added.measured_at
+
+
+async def test_clearing_pending_keeps_newer_changes(hass):
+    store = await new_store(hass)
+    await store.async_set_pending_display("backlight", False)
+    applied = dict(store.pending_display)
+    await store.async_set_pending_display("backlight", True)  # changed while applying
+    await store.async_set_pending_display("clock", False)
+    await store.async_clear_pending_display(applied)
+    assert store.pending_display == {"backlight": True, "clock": False}

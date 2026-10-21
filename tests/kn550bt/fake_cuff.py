@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -59,8 +60,14 @@ class FakeCuff:
     errors: dict[int, int] = field(default_factory=dict)  # cmd -> error code (0x38 reply)
     disconnect_on: set[int] = field(default_factory=set)  # cmd -> raise CuffDisconnected
     accept_auth: bool = True
+    truncate_after_pages: int | None = None  # later 0x4A replies come back empty
+    raw_records: list[bytes] = field(default_factory=list)  # served before `readings`
+    protocol_string: bytes | None = b"com.jiuan.BPAV21\x00\x00"  # None: no FF01 char
     clock: datetime | None = None
     received: list[bytes] = field(default_factory=list)  # payloads (A1 cmd ...) seen
+    gate_cmd: int | None = None  # pause before handling this command until `gate` is set
+    gate: asyncio.Event | None = None
+    gate_reached: asyncio.Event | None = None
 
     def __post_init__(self) -> None:
         self._rx = bytearray()
@@ -70,6 +77,10 @@ class FakeCuff:
         self._page = 0
         info = dict(INFO)
         info["00002a24-0000-1000-8000-00805f9b34fb"] = self.model
+        if self.protocol_string is None:
+            del info["0000ff01-0000-1000-8000-00805f9b34fb"]
+        else:
+            info["0000ff01-0000-1000-8000-00805f9b34fb"] = self.protocol_string
         self.info = info
         chars = {uuid: SimpleNamespace(uuid=uuid, properties=["read"]) for uuid in info}
         chars[WRITE] = SimpleNamespace(uuid=WRITE, properties=["write-without-response"])
@@ -96,6 +107,10 @@ class FakeCuff:
             total = self._rx[1] + 3
             frame = bytes(self._rx[:total])
             del self._rx[:total]
+            if self.gate is not None and len(frame) > 5 and frame[5] == self.gate_cmd:
+                if self.gate_reached is not None:
+                    self.gate_reached.set()
+                await self.gate.wait()
             self._handle(frame)
 
     # --- device behaviour ------------------------------------------------------
@@ -139,18 +154,22 @@ class FakeCuff:
             self._reply(seq, 0x61)
         elif cmd == 0x40:
             self._page = 0
-            count = len(self.readings) if self.report_count is None else self.report_count
+            stored = len(self.raw_records) + len(self.readings)
+            count = stored if self.report_count is None else self.report_count
             self._reply(seq, 0x40, bytes([0x01, count, 0, 0]))
         elif cmd == 0x4A:
-            if not self.readings:
+            records = self.raw_records + [r.encode() for r in self.readings]
+            done = self.truncate_after_pages is not None and self._page >= self.truncate_after_pages
+            if not records or done:
                 self._reply(seq, 0x4A)
                 return
-            page = self.readings[self._page * self.page_size : (self._page + 1) * self.page_size]
+            page = records[self._page * self.page_size : (self._page + 1) * self.page_size]
             self._page += 1
-            more = 1 if self._page * self.page_size < len(self.readings) else 0
-            self._reply(seq, 0x4A, bytes([0x01, more]) + b"".join(r.encode() for r in page))
+            more = 1 if self._page * self.page_size < len(records) else 0
+            self._reply(seq, 0x4A, bytes([0x01, more]) + b"".join(page))
         elif cmd == 0x47:
             self.readings.clear()
+            self.raw_records.clear()
             self._reply(seq, 0x47, bytes(3))
         else:
             self._reply(seq, 0x38, bytes([0x20]))

@@ -16,7 +16,7 @@ from .variants import Variant
 _LOGGER = logging.getLogger(__name__)
 
 PROTOCOL_AV21 = "com.jiuan.BPAV21"
-_MAX_PAGES = 64  # 99 readings fit in far fewer pages; guards against a misbehaving cuff
+_MAX_PAGES = 128  # more than the 99-reading capacity even at one record per page
 
 
 class Transport(Protocol):
@@ -60,6 +60,15 @@ class DisplaySettings:
     @classmethod
     def from_mask(cls, mask: int) -> DisplaySettings:
         return cls(backlight=bool(mask & 1), clock=bool(mask & 2))
+
+
+@dataclass(frozen=True)
+class Download:
+    """Readings from the cuff; ``complete`` is False unless every stored record arrived."""
+
+    readings: list[p.Reading]
+    complete: bool
+    expected: int
 
 
 @dataclass(frozen=True)
@@ -199,13 +208,24 @@ class KN550BTSession:
             "display", p.cmd(p.CMD_SET_DISPLAY, settings.mask, 0, 0), p.CMD_SET_DISPLAY
         )
 
-    async def read_readings(self) -> list[p.Reading]:
+    async def read_readings(self) -> Download:
+        """Download every stored reading.
+
+        Only a complete download may be followed by ``delete_readings``: the cuff's
+        delete command wipes everything, including anything that did not arrive.
+        """
         count = await self._request("readings", p.cmd(p.CMD_OFFLINE_NUM, 1, 0, 0), p.CMD_OFFLINE_NUM)
-        if len(count.data) < 2 or count.data[1] == 0:
-            return []
-        av21 = self._protocol_string == PROTOCOL_AV21
+        expected = count.data[1] if len(count.data) >= 2 else 0
+        if expected == 0:
+            return Download(readings=[], complete=len(count.data) >= 2, expected=0)
+        # An empty protocol string on the current firmware still means the 11-byte format.
+        av21 = self._protocol_string == PROTOCOL_AV21 or (
+            not self._protocol_string and self._variant is Variant.DEV
+        )
         command = p.CMD_OFFLINE_DATA_AV21 if av21 else p.CMD_OFFLINE_DATA
+        size = p.RECORD_SIZE_AV21 if av21 else p.RECORD_SIZE_LEGACY
         buf = b""
+        finished = False
         for _ in range(_MAX_PAGES):
             data = (await self._request(
                 "readings", p.cmd(command, 1, 0, 0), p.CMD_OFFLINE_DATA, p.CMD_OFFLINE_DATA_AV21
@@ -214,8 +234,17 @@ class KN550BTSession:
                 break
             buf += data[2:]
             if data[1] == 0:
+                finished = True
                 break
-        return p.parse_records_av21(buf) if av21 else p.parse_records_legacy(buf)
+        records = len(buf) // size
+        complete = finished and len(buf) % size == 0 and records >= expected
+        if not complete:
+            _LOGGER.warning(
+                "Incomplete download: %d of %d records (%d bytes, finished=%s)",
+                records, expected, len(buf), finished,
+            )
+        readings = p.parse_records_av21(buf) if av21 else p.parse_records_legacy(buf)
+        return Download(readings=readings, complete=complete, expected=expected)
 
     async def delete_readings(self) -> None:
         await self._request(

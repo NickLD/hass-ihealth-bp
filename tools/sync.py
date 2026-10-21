@@ -65,9 +65,11 @@ async def main() -> None:
         if args.display is not None:
             await session.set_display(DisplaySettings.from_mask(args.display))
         out["display"] = (await session.get_display()).__dict__
-        readings = await session.read_readings()
+        download = await session.read_readings()
+        readings = download.readings
         out["readings"] = [r.as_dict() for r in readings]
-        if args.delete and readings:
+        out["download_complete"] = download.complete
+        if args.delete and readings and download.complete:
             await session.delete_readings()
             out["deleted"] = len(readings)
     print(json.dumps(out, indent=2, default=str))

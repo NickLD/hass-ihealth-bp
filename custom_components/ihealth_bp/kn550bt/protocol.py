@@ -5,8 +5,14 @@ Reverse engineered from the iHealth MyVitals Pro 4.17.0 Android app.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime
+
+_LOGGER = logging.getLogger(__name__)
+
+RECORD_SIZE_AV21 = 11
+RECORD_SIZE_LEGACY = 10
 
 # --- GATT -------------------------------------------------------------------
 
@@ -109,14 +115,19 @@ class Reading:
 
 
 def parse_records_av21(buf: bytes) -> list[Reading]:
-    """11-byte records, protocol string com.jiuan.BPAV21 (A1InSet_KN550BT.e)."""
+    """11-byte records, protocol string com.jiuan.BPAV21. Unparseable records are skipped."""
     out = []
-    for i in range(0, len(buf) - len(buf) % 11, 11):
-        r = buf[i : i + 11]
+    for i in range(0, len(buf) - len(buf) % RECORD_SIZE_AV21, RECORD_SIZE_AV21):
+        r = buf[i : i + RECORD_SIZE_AV21]
         y, mo, d, h, mi, s, sys_minus_dia, dia, pulse, _scheme, flags = r
+        try:
+            time = datetime(2000 + y, mo, d, h, mi, s)
+        except ValueError:
+            _LOGGER.warning("Skipping unparseable record %s", r.hex())
+            continue
         out.append(
             Reading(
-                time=datetime(2000 + y, mo, d, h, mi, s),
+                time=time,
                 systolic=sys_minus_dia + dia,
                 diastolic=dia,
                 pulse=pulse,
@@ -128,13 +139,18 @@ def parse_records_av21(buf: bytes) -> list[Reading]:
 
 
 def parse_records_legacy(buf: bytes) -> list[Reading]:
-    """10-byte records, any other protocol string (A1InSet_KN550BT.e)."""
+    """10-byte records, any other protocol string. Unparseable records are skipped."""
     out = []
-    for i in range(0, len(buf) - len(buf) % 10, 10):
-        r = buf[i : i + 10]
+    for i in range(0, len(buf) - len(buf) % RECORD_SIZE_LEGACY, RECORD_SIZE_LEGACY):
+        r = buf[i : i + RECORD_SIZE_LEGACY]
+        try:
+            time = datetime(2000 + (r[0] & 0x7F), r[1] & 0x7F, r[2], r[3], r[4])
+        except ValueError:
+            _LOGGER.warning("Skipping unparseable record %s", r.hex())
+            continue
         out.append(
             Reading(
-                time=datetime(2000 + (r[0] & 0x7F), r[1] & 0x7F, r[2], r[3], r[4]),
+                time=time,
                 systolic=r[5] + r[6],
                 diastolic=r[6],
                 pulse=r[7],

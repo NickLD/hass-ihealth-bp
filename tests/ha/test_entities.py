@@ -5,7 +5,6 @@ from datetime import datetime, timedelta
 from homeassistant.const import ATTR_ENTITY_ID, STATE_OFF, STATE_ON
 
 from custom_components.ihealth_bp.diagnostics import async_get_config_entry_diagnostics
-from custom_components.ihealth_bp.kn550bt.session import DisplaySettings
 
 from ..kn550bt.fake_cuff import FakeCuff, StoredReading
 from .helpers import async_setup_cuff, async_sync
@@ -79,7 +78,7 @@ async def test_switch_toggle_sets_pending_then_reflects_device_after_sync(hass):
     await hass.services.async_call("switch", "turn_off", {ATTR_ENTITY_ID: switch}, blocking=True)
     assert state(hass, switch).state == STATE_OFF
     assert state(hass, switch).attributes["pending"] is True
-    assert coordinator.store.pending_display == DisplaySettings(backlight=False, clock=True)
+    assert coordinator.store.pending_display == {"backlight": False}
     await async_sync(hass, coordinator, cuff)
     assert cuff.display_mask == 0x02
     assert state(hass, switch).state == STATE_OFF
@@ -108,5 +107,53 @@ async def test_diagnostics_redacts_address(hass):
     text = str(diag)
     assert "00:4D:32:65:0E:89" not in text and "004D32650E89" not in text
     assert diag["readings"]["imported"] == 2
-    assert len(diag["recent_readings"]) == 2
     assert diag["variant"] == "com.jiuan.dev"
+
+
+async def test_toggle_after_restart_only_changes_that_setting(hass):
+    entry, coordinator = await async_setup_cuff(hass)
+    cuff = FakeCuff(display_mask=0x01)  # backlight on, clock off
+    await async_sync(hass, coordinator, cuff)
+    assert await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+    assert state(hass, f"switch.{P}_clock_display").state == STATE_OFF  # restored
+    await hass.services.async_call(
+        "switch", "turn_off", {ATTR_ENTITY_ID: f"switch.{P}_backlight"}, blocking=True
+    )
+    await async_sync(hass, entry.runtime_data, cuff)
+    assert cuff.display_mask == 0x00  # clock display stayed off
+
+
+async def test_reading_log_survives_remove_and_readd(hass):
+    from pytest_homeassistant_custom_component.common import async_capture_events
+
+    entry, coordinator = await async_setup_cuff(hass, delete=False)
+    cuff = cuff_with_two()
+    await async_sync(hass, coordinator, cuff)
+    assert await hass.config_entries.async_remove(entry.entry_id)
+    await hass.async_block_till_done()
+    events = async_capture_events(hass, "ihealth_bp_measurement")
+    _, again = await async_setup_cuff(hass, delete=False)
+    assert len(again.store.visible()) == 2
+    await async_sync(hass, again, cuff)
+    assert events == []
+
+
+async def test_diagnostics_has_no_reading_values_or_mac(hass):
+    from unittest.mock import patch
+
+    from .helpers import make_service_info
+
+    entry, coordinator = await async_setup_cuff(hass)
+    await async_sync(hass, coordinator, cuff_with_two())
+    with patch(
+        "custom_components.ihealth_bp.coordinator.async_connect",
+        side_effect=Exception("Device with address 00:4D:32:65:0E:89 was not found"),
+    ):
+        await coordinator.async_sync(make_service_info())
+    diag = await async_get_config_entry_diagnostics(hass, entry)
+    text = str(diag)
+    assert "00:4D:32:65:0E:89" not in text and "004D32650E89" not in text
+    assert "recent_readings" not in diag
+    assert "125" not in text and "121" not in text
+    assert diag["readings"]["imported"] == 2

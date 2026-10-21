@@ -102,12 +102,12 @@ async def test_review_mode_logs_pending_without_events_and_still_deletes(hass):
 
 async def test_pending_display_applied_and_cleared(hass):
     _, coordinator = await setup(hass)
-    await coordinator.async_request_display(DisplaySettings(backlight=False, clock=True))
-    assert coordinator.store.pending_display == DisplaySettings(backlight=False, clock=True)
+    await coordinator.async_request_display("backlight", False)
+    assert coordinator.store.pending_display == {"backlight": False}
     cuff = FakeCuff()
     await sync(hass, coordinator, cuff)
     assert cuff.display_mask == 0x02
-    assert coordinator.store.pending_display is None
+    assert coordinator.store.pending_display == {}
     assert coordinator.state.display == DisplaySettings(backlight=False, clock=True)
 
 
@@ -134,3 +134,41 @@ async def test_advertisement_triggers_sync(hass):
         await hass.async_block_till_done()
     assert coordinator.state.last_sync is not None
     assert cuff.readings == []
+
+
+async def test_incomplete_download_keeps_cuff_readings(hass):
+    _, coordinator = await setup(hass)
+    stored = [StoredReading(T0 + timedelta(minutes=i), 120, 80, 60) for i in range(10)]
+    cuff = FakeCuff(readings=list(stored), page_size=3, truncate_after_pages=2)
+    await sync(hass, coordinator, cuff)
+    assert len(coordinator.store.visible()) == 6  # what arrived is kept
+    assert len(cuff.readings) == 10  # but nothing was deleted
+    assert coordinator.state.failure_stage == "readings"
+    assert "incomplete" in coordinator.state.failure_reason
+
+
+async def test_reload_during_sync_does_not_lose_readings(hass):
+    import asyncio
+
+    from custom_components.ihealth_bp.storage import CuffStore
+
+    entry, coordinator = await setup(hass)
+    cuff = cuff_with_two()
+    cuff.gate_cmd, cuff.gate, cuff.gate_reached = 0x40, asyncio.Event(), asyncio.Event()
+    with patch(CONNECT, return_value=cuff):
+        sync_task = hass.async_create_task(coordinator.async_sync(make_service_info()))
+        await cuff.gate_reached.wait()
+        reload_task = hass.async_create_task(hass.config_entries.async_reload(entry.entry_id))
+        for _ in range(5):
+            await asyncio.sleep(0)
+        cuff.gate.set()
+        await sync_task
+        await reload_task
+    await hass.async_block_till_done()
+    new = entry.runtime_data
+    assert new is not coordinator
+    await new.async_request_display("backlight", False)  # forces the new store to save
+    assert len(new.store.visible()) == 2
+    reread = CuffStore(hass, entry.unique_id)
+    await reread.async_load()
+    assert len(reread.visible()) == 2

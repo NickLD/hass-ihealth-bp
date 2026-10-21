@@ -40,7 +40,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 async def async_setup_entry(hass: HomeAssistant, entry: IHealthBPConfigEntry) -> bool:
     """Set up iHealth Blood Pressure from a config entry."""
     address = entry.data[CONF_ADDRESS]
-    store = CuffStore(hass, entry.entry_id)
+    store = CuffStore(hass, address)
     await store.async_load()
     device = dr.async_get(hass).async_get_or_create(
         config_entry_id=entry.entry_id,
@@ -70,5 +70,6 @@ async def _async_update_listener(hass: HomeAssistant, entry: IHealthBPConfigEntr
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: IHealthBPConfigEntry) -> bool:
-    """Unload a config entry."""
+    """Unload a config entry, after any running session has finished."""
+    await entry.runtime_data.async_close()
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)

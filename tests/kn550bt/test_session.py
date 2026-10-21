@@ -38,28 +38,68 @@ async def test_full_sync_against_fake():
     assert cuff.clock == datetime(2026, 10, 21, 15, 9, 5)
     assert await session.battery() == 100
     assert await session.get_display() == DisplaySettings(backlight=True, clock=True)
-    readings = await session.read_readings()
-    assert [(r.time, r.systolic, r.diastolic, r.pulse) for r in readings] == [
+    download = await session.read_readings()
+    assert download.complete and download.expected == 2
+    assert [(r.time, r.systolic, r.diastolic, r.pulse) for r in download.readings] == [
         (T0, 125, 64, 69), (T0 + timedelta(minutes=16, seconds=31), 121, 71, 68)]
 
 
 async def test_empty_cuff_returns_no_readings():
     session = await opened(FakeCuff())
-    assert await session.read_readings() == []
+    download = await session.read_readings()
+    assert download.readings == [] and download.complete
 
 
-async def test_empty_offline_reply_returns_no_readings():
+async def test_empty_offline_reply_returns_no_readings_and_is_incomplete():
     session = await opened(FakeCuff(report_count=2))  # count says 2, data reply is empty
-    assert await session.read_readings() == []
+    download = await session.read_readings()
+    assert download.readings == []
+    assert not download.complete
+
+
+async def test_fewer_records_than_count_is_incomplete():
+    session = await opened(FakeCuff(readings=two_readings(), report_count=5))
+    download = await session.read_readings()
+    assert len(download.readings) == 2 and not download.complete
+
+
+async def test_short_page_mid_stream_is_incomplete():
+    stored = [StoredReading(T0 + timedelta(minutes=i), 120, 80, 60) for i in range(10)]
+    cuff = FakeCuff(readings=stored, page_size=3, truncate_after_pages=2)
+    download = await (await opened(cuff)).read_readings()
+    assert len(download.readings) == 6 and not download.complete
+
+
+async def test_ninety_nine_single_record_pages_are_all_read():
+    stored = [StoredReading(T0 + timedelta(minutes=i), 120, 80, 60) for i in range(99)]
+    download = await (await opened(FakeCuff(readings=stored, page_size=1))).read_readings()
+    assert len(download.readings) == 99 and download.complete
+
+
+async def test_unparseable_record_is_skipped_but_download_complete():
+    bad = bytes([26, 0, 21, 14, 52, 31, 61, 64, 69, 0, 0])  # month 0
+    cuff = FakeCuff(readings=two_readings(), raw_records=[bad])
+    download = await (await opened(cuff)).read_readings()
+    assert [r.systolic for r in download.readings] == [125, 121]
+    assert download.complete
+
+
+async def test_missing_protocol_string_uses_current_record_format():
+    cuff = FakeCuff(readings=two_readings(), protocol_string=None)
+    session = KN550BTSession(cuff, Variant.DEV, timeout=1.0)
+    assert (await session.read_device_info()).protocol_string == ""
+    await session.open()
+    download = await session.read_readings()
+    assert [r.systolic for r in download.readings] == [125, 121] and download.complete
 
 
 async def test_ninety_nine_readings_over_multiple_pages():
     stored = [StoredReading(T0 + timedelta(minutes=i), 110 + i % 30, 70, 60 + i % 20) for i in range(99)]
     cuff = FakeCuff(readings=list(stored), page_size=20)
     session = await opened(cuff)
-    readings = await session.read_readings()
-    assert len(readings) == 99
-    assert [r.time for r in readings] == [s.time for s in stored]
+    download = await session.read_readings()
+    assert len(download.readings) == 99 and download.complete
+    assert [r.time for r in download.readings] == [s.time for s in stored]
     assert sum(1 for p in cuff.received if p[1] == 0x4A) == 5
 
 
