@@ -85,3 +85,59 @@ async def test_clearing_pending_keeps_newer_changes(hass):
     await store.async_set_pending_display("clock", False)
     await store.async_clear_pending_display(applied)
     assert store.pending_display == {"backlight": True, "clock": False}
+
+
+async def test_set_context_flags_and_note(hass):
+    store = await new_store(hass)
+    (added,) = await store.async_add([R1], review=False)
+    uid = added.uid
+    (updated,) = await store.async_set_context(
+        [uid], add_flags=["stressed", "caffeine", "caffeine"], note="after stairs"
+    )
+    assert updated.flags == ("caffeine", "stressed")
+    assert store.find(uid).flags == ("caffeine", "stressed")
+    assert store.find(uid).note == "after stairs"
+    await store.async_set_context([uid], remove_flags=["caffeine"])
+    assert store.find(uid).flags == ("stressed",)
+    assert store.find(uid).note == "after stairs"
+    await store.async_set_context([uid], note="")
+    assert store.find(uid).note is None
+    await store.async_set_context([uid], note="again")
+    await store.async_set_context([uid], note=None)
+    assert store.find(uid).note == "again"
+    await store.async_set_context([uid], flags=["sick", "ate"])
+    assert store.find(uid).flags == ("ate", "sick")
+
+
+async def test_context_survives_reload(hass):
+    store = await new_store(hass)
+    await store.async_add([R1], review=False)
+    uid = reading_uid(R1)
+    await store.async_set_context([uid], add_flags=["ate", "sick"], note="n")
+    again = await new_store(hass)
+    assert again.find(uid).flags == ("ate", "sick")
+    assert again.find(uid).note == "n"
+
+
+async def test_loads_v01_data_without_context(hass, hass_storage):
+    hass_storage["ihealth_bp.entry1"] = {
+        "version": 1,
+        "key": "ihealth_bp.entry1",
+        "data": {
+            "readings": [
+                {
+                    "uid": "u1",
+                    "measured_at": "2026-10-21T19:52:31+00:00",
+                    "systolic": 125,
+                    "diastolic": 64,
+                    "pulse": 69,
+                    "irregular_pulse": False,
+                    "body_movement": False,
+                    "status": "imported",
+                }
+            ]
+        },
+    }
+    store = await new_store(hass)
+    assert store.find("u1").flags == ()
+    assert store.find("u1").note is None

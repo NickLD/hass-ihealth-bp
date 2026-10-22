@@ -1,6 +1,6 @@
 """Readings list, deleting readings and review mode."""
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from homeassistant.const import ATTR_ENTITY_ID
@@ -8,7 +8,8 @@ from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from pytest_homeassistant_custom_component.common import async_capture_events
 
 from custom_components.ihealth_bp.const import DOMAIN, EVENT_MEASUREMENT
-from custom_components.ihealth_bp.storage import ReadingStatus
+from custom_components.ihealth_bp.storage import LoggedReading, ReadingStatus
+from custom_components.ihealth_bp.todo import reading_description
 
 from ..kn550bt.fake_cuff import FakeCuff, StoredReading
 from .helpers import async_setup_cuff, async_sync
@@ -159,3 +160,19 @@ async def test_concurrent_delete_actions_give_validation_error(hass):
     errors = [r for r in results if isinstance(r, Exception)]
     assert len(errors) == 1 and isinstance(errors[0], ServiceValidationError)
     assert [i["summary"] for i in await items(hass)] == [LATEST]
+
+
+def test_description_lists_context():
+    reading = LoggedReading(
+        uid="u",
+        measured_at=datetime(2026, 10, 21, 12, 0, tzinfo=UTC),
+        systolic=120,
+        diastolic=80,
+        pulse=60,
+        irregular_pulse=True,
+        body_movement=False,
+        status=ReadingStatus.IMPORTED,
+        flags=("caffeine",),
+        note="x",
+    )
+    assert reading_description(reading) == "Irregular pulse, Had caffeine — x"

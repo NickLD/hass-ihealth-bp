@@ -29,6 +29,19 @@ def reading_summary(reading: LoggedReading) -> str:
     )
 
 
+FLAG_LABELS = {
+    "caffeine": "Had caffeine",
+    "ate": "Just ate",
+    "exertion": "After exertion",
+    "after_shower": "After shower",
+    "poor_sleep": "Poor sleep",
+    "alcohol": "Alcohol last night",
+    "stressed": "Stressed",
+    "missed_meds": "Missed meds",
+    "sick": "Sick",
+}
+
+
 def reading_description(reading: LoggedReading) -> str | None:
     flags = [
         label
@@ -38,7 +51,11 @@ def reading_description(reading: LoggedReading) -> str | None:
         )
         if on
     ]
-    return ", ".join(flags) or None
+    flags += [FLAG_LABELS.get(f, f) for f in reading.flags]
+    text = ", ".join(flags)
+    if reading.note:
+        text = f"{text} — {reading.note}" if text else reading.note
+    return text or None
 
 
 async def async_setup_entry(

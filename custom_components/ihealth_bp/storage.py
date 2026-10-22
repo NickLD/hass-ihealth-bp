@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from collections.abc import Iterable
 from datetime import datetime
 from enum import StrEnum
 from typing import Any
@@ -11,7 +12,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
-from .const import DOMAIN
+from .const import DOMAIN, FLAGS
 from .kn550bt.protocol import Reading
 
 STORAGE_VERSION = 1
@@ -33,6 +34,8 @@ class LoggedReading:
     irregular_pulse: bool
     body_movement: bool
     status: ReadingStatus
+    flags: tuple[str, ...] = ()
+    note: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -44,6 +47,8 @@ class LoggedReading:
             "irregular_pulse": self.irregular_pulse,
             "body_movement": self.body_movement,
             "status": self.status.value,
+            "flags": list(self.flags),
+            "note": self.note,
         }
 
     @classmethod
@@ -57,6 +62,8 @@ class LoggedReading:
             irregular_pulse=data["irregular_pulse"],
             body_movement=data["body_movement"],
             status=ReadingStatus(data["status"]),
+            flags=tuple(data.get("flags") or ()),
+            note=data.get("note"),
         )
 
 
@@ -124,6 +131,34 @@ class CuffStore:
         updated = replace(self._readings[uid], status=status)
         self._readings[uid] = updated
         await self._async_save()
+        return updated
+
+    async def async_set_context(
+        self,
+        uids: Iterable[str],
+        *,
+        flags: Iterable[str] | None = None,
+        add_flags: Iterable[str] = (),
+        remove_flags: Iterable[str] = (),
+        note: str | None = None,
+    ) -> list[LoggedReading]:
+        """Set flags and note on readings with one save; note=None keeps, "" clears."""
+        updated: list[LoggedReading] = []
+        for uid in uids:
+            reading = self._readings[uid]
+            current = set(reading.flags if flags is None else flags)
+            current |= set(add_flags)
+            current -= set(remove_flags)
+            new_note = reading.note if note is None else (note or None)
+            changed = replace(
+                reading,
+                flags=tuple(f for f in FLAGS if f in current),
+                note=new_note,
+            )
+            self._readings[uid] = changed
+            updated.append(changed)
+        if updated:
+            await self._async_save()
         return updated
 
     def find(self, uid: str) -> LoggedReading | None:
