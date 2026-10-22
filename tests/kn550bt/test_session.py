@@ -103,6 +103,19 @@ async def test_ninety_nine_readings_over_multiple_pages():
     assert sum(1 for p in cuff.received if p[1] == 0x4A) == 5
 
 
+async def test_disconnect_between_pages_raises_readings_error():
+    stored = [StoredReading(T0 + timedelta(minutes=i), 120, 80, 60) for i in range(5)]
+    cuff = FakeCuff(readings=list(stored), page_size=2, disconnect_on_page=2)
+    session = await opened(cuff)
+    with pytest.raises(SessionError) as err:
+        await session.read_readings()
+    assert err.value.stage == "readings"
+    assert "CuffDisconnected" in str(err.value)
+    assert sum(1 for p in cuff.received if p[1] == 0x4A) == 2
+    assert not any(p[1] == 0x47 for p in cuff.received)
+    assert len(cuff.readings) == 5
+
+
 async def test_set_display_sends_mask():
     cuff = FakeCuff()
     session = await opened(cuff)
