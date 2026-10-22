@@ -3,7 +3,10 @@
     "flow_title": "{name}",
     "step": {
       "bluetooth_confirm": {
-        "description": "Set up the iHealth {name} blood pressure monitor? Home Assistant will sync it each time it wakes up after a measurement.\n\n{note}"
+        "description": "Set up the iHealth {name} blood pressure monitor? Home Assistant will sync it each time it wakes up after a measurement."
+      },
+      "bluetooth_confirm_untested": {
+        "description": "Set up the iHealth {name} blood pressure monitor? Home Assistant will sync it each time it wakes up after a measurement.\n\nThis cuff uses older firmware ({variant}) that is supported but **untested**. Please report how it goes, with debug logs, on the project issue tracker."
       },
       "user": {
         "description": "Choose the blood pressure monitor to set up. Take a measurement (or wake the cuff) first so Home Assistant can see it.",
