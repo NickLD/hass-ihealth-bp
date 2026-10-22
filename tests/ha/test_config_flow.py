@@ -119,7 +119,9 @@ async def test_user_step_without_devices_aborts(hass):
     assert result["reason"] == "no_devices_found"
 
 
-async def test_options_defaults_and_update(hass):
+async def test_options_defaults_and_update(hass, freezer):
+    freezer.move_to("2026-10-21 17:00:00")  # frozen: the default start date is today
+    today = dt_util.now().date().isoformat()
     entry = MockConfigEntry(
         domain=DOMAIN, unique_id=ADDRESS,
         data={"address": ADDRESS, "variant": "com.jiuan.dev"},
@@ -136,7 +138,7 @@ async def test_options_defaults_and_update(hass):
         CONF_DELETE_AFTER_IMPORT: False, CONF_REVIEW_MODE: True,
         "morning_start": "05:00:00", "morning_end": "12:30:00",
         "evening_start": "21:00:00", "evening_end": "03:00:00",
-        "routine_start": dt_util.now().date().isoformat(),
+        "routine_start": today,
     }
 
 

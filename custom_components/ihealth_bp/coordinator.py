@@ -341,14 +341,17 @@ class IHealthBPCoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
         session = self.session_of(reading.uid)
         session_info: dict[str, object] = {}
         if session is not None:
+            index = session.index_of(reading.uid)
+            # A backlog sync stores every reading before firing: report the session so far.
+            so_far = replace(session, readings=session.readings[:index])
             session_info = {
                 "period": session.period.value,
-                "session_index": session.index_of(reading.uid),
+                "session_index": index,
                 "session_start": dt_util.as_local(session.start).isoformat(),
-                "session_mean_systolic": session.mean_systolic,
-                "session_mean_diastolic": session.mean_diastolic,
+                "session_mean_systolic": so_far.mean_systolic,
+                "session_mean_diastolic": so_far.mean_diastolic,
                 "session_measured_at": [
-                    dt_util.as_local(t).isoformat() for t in session.measured_at
+                    dt_util.as_local(t).isoformat() for t in so_far.measured_at
                 ],
             }
         self.hass.bus.async_fire(

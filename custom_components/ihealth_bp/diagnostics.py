@@ -11,8 +11,25 @@ from homeassistant.components.diagnostics import async_redact_data
 from homeassistant.core import HomeAssistant
 
 from . import IHealthBPConfigEntry
+from .const import (
+    CONF_EVENING_END,
+    CONF_EVENING_START,
+    CONF_MORNING_END,
+    CONF_MORNING_START,
+    CONF_ROUTINE_START,
+)
 
-TO_REDACT = {"address", "serial", "unique_id"}
+# The routine windows and start date hint at the owner's daily schedule.
+TO_REDACT = {
+    "address",
+    "serial",
+    "unique_id",
+    CONF_MORNING_START,
+    CONF_MORNING_END,
+    CONF_EVENING_START,
+    CONF_EVENING_END,
+    CONF_ROUTINE_START,
+}
 _MAC = re.compile(r"(?i)\b(?:[0-9a-f]{2}[:-]){5}[0-9a-f]{2}\b|\b[0-9a-f]{12}\b")
 
 

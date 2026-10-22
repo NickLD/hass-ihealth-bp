@@ -311,7 +311,7 @@
         },
         "measured_at": {
           "name": "Measured at",
-          "description": "When any reading of the session was taken (local time, to the second)."
+          "description": "When the reading was taken (with Whole session on, any reading of the session)."
         },
         "session": {
           "name": "Whole session",
@@ -346,7 +346,7 @@
       "message": "Give at least one of flags, add_flags or note."
     },
     "no_session": {
-      "message": "There is no session to discard."
+      "message": "There is no measurement session yet."
     }
   },
   "selector": {

@@ -53,6 +53,19 @@ async def test_event_includes_session_fields(hass):
     assert second["uid"]
 
 
+async def test_event_session_fields_are_so_far_in_one_sync(hass):
+    events = async_capture_events(hass, EVENT_MEASUREMENT)
+    _, coordinator = await async_setup_cuff(hass)
+    await async_sync(hass, coordinator, two_readings())
+    first, second = (e.data for e in events)
+    assert first["session_index"] == 1
+    assert len(first["session_measured_at"]) == 1
+    assert first["session_measured_at"][0] == first["measured_at"]
+    assert (first["session_mean_systolic"], first["session_mean_diastolic"]) == (130.0, 80.0)
+    assert first["session_start"] == second["session_start"]
+    assert len(second["session_measured_at"]) == 2
+    assert (second["session_mean_systolic"], second["session_mean_diastolic"]) == (125.0, 78.0)
+
 async def test_backlog_events_have_correct_sessions(hass):
     events = async_capture_events(hass, EVENT_MEASUREMENT)
     _, coordinator = await async_setup_cuff(hass)

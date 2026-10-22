@@ -118,6 +118,68 @@ async def test_session_period_from_first_reading(hass):
     assert session.period is Period.MORNING
 
 
+async def test_session_straddling_evening_start_is_evening(hass):
+    await hass.config.async_set_time_zone("America/Chicago")
+    a = reading(datetime(2026, 10, 21, 20, 59, 30), 130, 85)
+    b = reading(datetime(2026, 10, 21, 21, 0, 40), 120, 80)
+    (session,) = group_sessions([a, b], W)
+    assert session.period is Period.EVENING
+    assert session.day == date(2026, 10, 21)
+    assert session.start == a.measured_at
+
+
+async def test_session_straddling_morning_start_is_morning(hass):
+    await hass.config.async_set_time_zone("America/Chicago")
+    a = reading(datetime(2026, 10, 22, 4, 59, 30), 130, 85)
+    b = reading(datetime(2026, 10, 22, 5, 0, 40), 120, 80)
+    (session,) = group_sessions([a, b], W)
+    assert session.period is Period.MORNING
+    assert session.day == date(2026, 10, 22)
+
+
+async def test_session_outside_windows_is_extra(hass):
+    await hass.config.async_set_time_zone("America/Chicago")
+    a = reading(datetime(2026, 10, 22, 4, 50), 130, 85)
+    b = reading(datetime(2026, 10, 22, 4, 55), 120, 80)
+    (session,) = group_sessions([a, b], W)
+    assert session.period is Period.EXTRA
+    assert session.day == date(2026, 10, 21)
+
+
+async def test_non_default_windows(hass):
+    await hass.config.async_set_time_zone("America/Chicago")
+    w = Windows(
+        morning_start=time(6), morning_end=time(11),
+        evening_start=time(20), evening_end=time(1),
+    )
+    assert w.valid()
+    assert bp_day(local(2026, 10, 22, 6, 0), w) == date(2026, 10, 22)
+    assert bp_day(local(2026, 10, 22, 5, 59), w) == date(2026, 10, 21)
+    assert period_of(local(2026, 10, 22, 5, 30), w) is Period.EXTRA
+    assert bp_day(local(2026, 10, 22, 5, 30), w) == date(2026, 10, 21)
+    assert period_of(local(2026, 10, 22, 0, 30), w) is Period.EVENING
+    assert bp_day(local(2026, 10, 22, 0, 30), w) == date(2026, 10, 21)
+    cases = [
+        ((2026, 10, 21, 6, 0), Period.MORNING),
+        ((2026, 10, 21, 10, 59), Period.MORNING),
+        ((2026, 10, 21, 11, 0), Period.EXTRA),
+        ((2026, 10, 21, 19, 59), Period.EXTRA),
+        ((2026, 10, 21, 20, 0), Period.EVENING),
+        ((2026, 10, 22, 0, 59), Period.EVENING),
+        ((2026, 10, 22, 1, 0), Period.EXTRA),
+    ]
+    for args, expected in cases:
+        assert period_of(local(*args), w) is expected, args
+    assert w.slot_bounds(date(2026, 10, 21), Period.EVENING) == (
+        local(2026, 10, 21, 20, 0),
+        local(2026, 10, 22, 1, 0),
+    )
+    assert w.slot_bounds(date(2026, 10, 21), Period.MORNING) == (
+        local(2026, 10, 21, 6, 0),
+        local(2026, 10, 21, 11, 0),
+    )
+
+
 START = date(2026, 10, 1)
 NOW = (2026, 10, 21, 14, 0)
 
@@ -219,3 +281,17 @@ async def test_after_midnight_reading_fills_previous_evening(hass):
     assert s.evening.window_start == local(2026, 10, 21, 21, 0)
     s = summarize([r], W, START, local(2026, 10, 22, 5, 0))
     assert (s.morning.status, s.evening.status) == (SlotStatus.OPEN, SlotStatus.UPCOMING)
+
+
+async def test_straddling_session_fills_evening_slot_and_baseline(hass):
+    await _tz(hass)
+    rs = [
+        reading(datetime(2026, 10, 21, 20, 59, 30), 130, 85),
+        reading(datetime(2026, 10, 21, 21, 0, 40), 120, 80),
+    ]
+    s = summarize(rs, W, START, local(2026, 10, 21, 21, 30))
+    assert s.evening.status is SlotStatus.FILLED
+    assert s.evening.reading_count == 2
+    assert s.evening_7d == Mean(125.0, 82.5)
+    assert s.baseline_7d == Mean(125.0, 82.5)
+    assert s.slots_filled_7d == 1

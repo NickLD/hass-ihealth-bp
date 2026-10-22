@@ -78,6 +78,17 @@ async def test_flag_switch_unknown_without_session(hass, freezer):
     await async_setup_cuff(hass)
     assert state(hass, f"switch.{P}_sick").state == "unknown"
     assert state(hass, f"text.{P}_session_note").state == ""
+    with pytest.raises(ServiceValidationError) as err:
+        await hass.services.async_call(
+            "switch", "turn_on", {"entity_id": f"switch.{P}_sick"}, blocking=True
+        )
+    assert err.value.translation_key == "no_session"
+    with pytest.raises(ServiceValidationError) as err:
+        await hass.services.async_call(
+            "text", "set_value", {"entity_id": f"text.{P}_session_note", "value": "x"},
+            blocking=True,
+        )
+    assert err.value.translation_key == "no_session"
 
 
 async def test_session_note_roundtrip(hass, freezer):
@@ -141,3 +152,21 @@ async def test_diagnostics_has_no_context(hass, freezer):
     dump = str(await async_get_config_entry_diagnostics(hass, entry))
     assert "secret note" not in dump
     assert "missed_meds" not in dump
+
+
+async def test_diagnostics_redacts_routine_options(hass, freezer):
+    entry, _ = await setup_synced(hass, freezer)
+    routine = {
+        "morning_start": "06:15:00", "morning_end": "10:45:00",
+        "evening_start": "19:15:00", "evening_end": "23:45:00",
+        "routine_start": "2026-10-03",
+    }
+    hass.config_entries.async_update_entry(entry, options={**entry.options, **routine})
+    await hass.async_block_till_done()
+    diag = await async_get_config_entry_diagnostics(hass, entry)
+    options = diag["entry"]["options"]
+    for key in routine:
+        assert options[key] == "**REDACTED**", key
+    dump = str(diag)
+    for value in routine.values():
+        assert value not in dump, value

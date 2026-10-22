@@ -129,22 +129,24 @@ class Session:
         return [r.measured_at for r in self.readings]
 
 
+def _session(group: list[LoggedReading], windows: Windows) -> Session:
+    """The first reading inside a routine window sets period and day, else it is extra."""
+    for reading in group:
+        period = period_of(reading.measured_at, windows)
+        if period in ROUTINE_PERIODS:
+            return Session(tuple(group), period, bp_day(reading.measured_at, windows))
+    return Session(tuple(group), Period.EXTRA, bp_day(group[0].measured_at, windows))
+
+
 def group_sessions(readings: Iterable[LoggedReading], windows: Windows) -> list[Session]:
-    """Chain readings no more than SESSION_GAP apart; the first reading sets period and day."""
+    """Chain readings no more than SESSION_GAP apart into sessions."""
     groups: list[list[LoggedReading]] = []
     for reading in sorted(readings, key=lambda r: r.measured_at):
         if groups and reading.measured_at - groups[-1][-1].measured_at <= SESSION_GAP:
             groups[-1].append(reading)
         else:
             groups.append([reading])
-    return [
-        Session(
-            readings=tuple(g),
-            period=period_of(g[0].measured_at, windows),
-            day=bp_day(g[0].measured_at, windows),
-        )
-        for g in groups
-    ]
+    return [_session(g, windows) for g in groups]
 
 
 class SlotStatus(StrEnum):
