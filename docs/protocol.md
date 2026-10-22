@@ -53,7 +53,7 @@ KN-550BT.
 | `20` | `00 00 00` | `20 bat 00 00` | Battery %, tested |
 | `21` | `YY MM DD hh mm ss` (year − 2000, local time) | `21` + capabilities | Set clock and read capabilities, tested |
 | `40` | `01 00 00` | `40 01 count 00 00` | Stored reading count (memory group 1), tested |
-| `4A` | `01 00 00` | `4A 01 more records…` | Readings, BPAV21 protocol string; repeat while `more` ≠ 0, tested |
+| `4A` | `01 00 00` | `4A 01 more records…` | Readings, BPAV21 protocol string; repeat while `more` ≠ 0 (single page tested, see below) |
 | `46` | `01 00 00` | `46 01 more records…` | Readings, other protocol strings (untested) |
 | `47` | `00 00 00` | `47 00 00 00` | Transfer finished: **permanently deletes** the downloaded readings, tested |
 | `60` | `00 00 00` | `60 mask 00 00` | Display settings: bit 0 backlight, bit 1 clock, tested |
@@ -62,6 +62,10 @@ KN-550BT.
 | `38` | — | `38 code` | Error reply (13 = low battery, 32 = measuring, …) |
 
 An empty reply (no data bytes) to `4A` means there are no readings.
+
+Only a single `4A` page has been seen from the real cuff (2 readings, `more` = 0). Repeating the
+request while `more` ≠ 0 follows the iHealth app's logic and has only been exercised against a
+simulated cuff.
 
 The capabilities in the `21` reply (BPAV21 layout) are: byte 2 = memory groups (1 on the KN-550BT),
 `byte7 × 256 + byte3` = capacity (99), and byte 8 bits 0/1 = backlight/clock settable.
@@ -82,6 +86,8 @@ Bit 7 of the year byte is irregular pulse and bit 7 of the month byte is HSD.
 - Every reply frame longer than 6 bytes with flag ≠ `F0` must be acknowledged with
   `B0 03 (A0 | flag & 0F) rxseq+1 A1 sum`. The next command's `seq` continues from
   `(flag & 0F) × 2 + rxseq + 3`. 6-byte frames from the cuff are acknowledgements.
+- A reply frame with flag `F0` is not acknowledged; the next command's `seq` is `rxseq + 1`.
+  In both rules `rxseq` is the `seq` byte of the received frame.
 - Multi-fragment replies are reassembled in send order. The first fragment (highest low nibble)
   carries `A1 cmd data`, and later ones carry `A1 data`.
 - Authentication: send `A1 FA R1`. The cuff replies `FB` with 48 bytes `B0 B1 B2`.
