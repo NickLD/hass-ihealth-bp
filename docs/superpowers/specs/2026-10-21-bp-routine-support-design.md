@@ -68,7 +68,11 @@ protocol used in most studies
 ## Sessions
 
 Readings no more than **10 minutes** apart (chained) form one session. A session has an index per
-reading (1, 2, 3…), a mean systolic/diastolic/pulse, and the period of its first reading.
+reading (1, 2, 3…), a mean systolic/diastolic/pulse, and a period and BP day. Both come from the
+session's first reading that falls in a routine window (morning or evening), using that reading's
+period and BP day; a session with no reading in a routine window is `extra` and takes the BP day of
+its first reading. So 12:25/12:31 is morning, 20:59:30/21:00:40 is evening, and 04:59:30/05:00:40
+is the morning of the new BP day.
 
 ## Periods
 
@@ -132,7 +136,9 @@ the window slides:
 
 `ihealth_bp_measurement` gains: `uid`, `period`, `session_index`, `session_start` (local ISO),
 `session_mean_systolic`, `session_mean_diastolic`, `session_measured_at` (list of local ISO
-timestamps in the session), `bp_category`. Existing keys unchanged.
+timestamps in the session), `bp_category`. Existing keys unchanged. The session mean and
+`session_measured_at` cover the session so far, up to and including the event's reading, even when
+later readings of the session arrived in the same sync.
 
 ## Services
 

@@ -102,15 +102,20 @@ fills a slot. The windows can be changed in the [options](#options).
 
 Readings no more than **10 minutes apart** (chained) form one session. Each reading gets a
 `session_index` (1, 2, 3...), and the session has a mean systolic and diastolic. The session takes its
-period and BP day from its first reading.
+period and BP day from its first reading that falls inside the morning or evening window, so a session
+started at 20:59 and finished at 21:01 fills the evening slot. A session with no reading inside a
+window is `extra` and belongs to the BP day of its first reading.
 
 ### Flags and notes
 
 Each reading can carry context **flags** and a free-text **note** (up to 255 characters). The flags
 are: had caffeine, just ate, after exertion, after shower, poor sleep, alcohol last night, stressed,
-missed meds, sick. Set them from the entities below (they act on the latest session) or with the
-`ihealth_bp.set_reading_context` action for any reading. They are stored with the reading and survive
-restarts.
+missed meds, sick. Set them from the entities below or with the `ihealth_bp.set_reading_context`
+action for any reading. They are stored with the reading and survive restarts.
+
+The flag switches, the session note and the discard button act on the **latest session**: the newest
+session by cuff time, the one you have already taken. They never apply to the next session. Flag a
+session after taking it (once Home Assistant has imported it), not before.
 
 ### What counts toward the baseline
 
@@ -138,12 +143,13 @@ baseline. Change it in the [options](#options).
 | Routine slots filled (7 days) | 0-14 |
 | Irregular pulse readings (7 days) | Count of readings with the irregular-pulse flag |
 | Morning slot, Evening slot | Today's state: `filled`, `open`, `upcoming` or `closed`. Attributes: `window_start`, `window_end`, `first_reading_at`, `mean_systolic`, `mean_diastolic`, `reading_count`. Automations can read the window from these |
-| Had caffeine, Just ate, After exertion, After shower, Poor sleep, Alcohol last night, Stressed, Missed meds, Sick (switches) | Flag every reading of the latest session |
+| Had caffeine, Just ate, After exertion, After shower, Poor sleep, Alcohol last night, Stressed, Missed meds, Sick (switches) | Flag every reading of the latest session (newest by cuff time) |
 | Session note (text) | Note for the latest session |
 | Discard latest session (button) | Deletes the latest session's readings |
 
-The sensors are recalculated after every new reading, flag change and delete, and at local midnight
-so the window slides.
+The trailing 7- and 30-day windows count BP days (which start at the morning window start), not
+calendar days. The sensors are recalculated after every new reading, flag change and delete, at every
+window start and end, and at local midnight.
 
 ## Entities
 
@@ -189,7 +195,7 @@ Each imported reading fires an `ihealth_bp_measurement` event, oldest first:
 | `session_index` | Position of this reading in its session (1, 2, ...) |
 | `session_start` | Local time of the session's first reading (ISO 8601) |
 | `session_mean_systolic`, `session_mean_diastolic` | Mean of the session so far, including this reading |
-| `session_measured_at` | List of the session's reading times (ISO 8601) |
+| `session_measured_at` | Times of the session's readings so far, up to and including this one (ISO 8601) |
 
 The session fields are only present when the reading belongs to a session.
 
@@ -238,8 +244,10 @@ triggered), and the sensors' short-term history keeps the old value until the re
 
 ### Example: take a second reading
 
-After the first reading of a session, notify the phone and offer to discard the session. The
-automation saves `measured_at` first, because `trigger` is replaced while waiting for the reply:
+After the first reading of a session, notify the phone and offer to discard the session. The second
+condition skips old readings that arrive in a backlog sync (for example after Home Assistant was
+offline), so you are not asked to retake a measurement from hours ago. `wait_for_trigger` stores the
+reply in `wait.trigger`, so `trigger` still refers to the reading afterwards:
 
 ```yaml
 automation:
@@ -250,9 +258,10 @@ automation:
     conditions:
       - condition: template
         value_template: "{{ trigger.event.data.session_index == 1 }}"
+      - condition: template
+        value_template: >-
+          {{ now() - as_datetime(trigger.event.data.measured_at) < timedelta(minutes=5) }}
     actions:
-      - variables:
-          measured_at: "{{ trigger.event.data.measured_at }}"
       - action: notify.mobile_app_your_phone
         data:
           title: "{{ trigger.event.data.systolic }}/{{ trigger.event.data.diastolic }}"
@@ -270,8 +279,8 @@ automation:
         continue_on_timeout: false
       - action: ihealth_bp.delete_session
         data:
-          device_id: <your cuff's device id>
-          measured_at: "{{ measured_at }}"
+          device_id: "{{ trigger.event.data.device_id }}"
+          measured_at: "{{ trigger.event.data.measured_at }}"
 ```
 
 ## Options
