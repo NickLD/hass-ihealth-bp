@@ -11,3 +11,21 @@ SERVICE_DELETE_READING = "delete_reading"
 # Seconds an advertisement must follow the previous session before we connect again.
 POLL_INTERVAL_S = 30
 CONF_VARIANT = "variant"
+
+CONF_MORNING_START = "morning_start"
+CONF_MORNING_END = "morning_end"
+CONF_EVENING_START = "evening_start"
+CONF_EVENING_END = "evening_end"
+CONF_ROUTINE_START = "routine_start"
+
+FLAGS: tuple[str, ...] = (
+    "caffeine",
+    "ate",
+    "exertion",
+    "after_shower",
+    "poor_sleep",
+    "alcohol",
+    "stressed",
+    "missed_meds",
+    "sick",
+)
