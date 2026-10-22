@@ -94,4 +94,9 @@ class ReadingsList(IHealthBPEntity, TodoListEntity):
 
     async def async_delete_todo_items(self, uids: list[str]) -> None:
         for uid in uids:
-            await self.coordinator.async_delete_reading(uid)
+            try:
+                await self.coordinator.async_delete_reading(uid)
+            except KeyError as err:  # already deleted, e.g. by a concurrent call
+                raise ServiceValidationError(
+                    translation_domain=DOMAIN, translation_key="reading_not_found"
+                ) from err
