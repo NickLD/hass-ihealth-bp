@@ -27,6 +27,7 @@ from . import IHealthBPConfigEntry
 from .coordinator import IHealthBPCoordinator
 from .derived import BP_CATEGORIES, bp_category, mean_arterial_pressure, pulse_pressure
 from .entity import IHealthBPEntity
+from .routine import Mean, RoutineSummary, SlotInfo, SlotStatus
 from .storage import LoggedReading
 
 BPM = "bpm"
@@ -45,6 +46,14 @@ class StateSensorDescription(SensorEntityDescription):
 
     value_fn: Callable[[IHealthBPCoordinator], Any]
     attrs_fn: Callable[[IHealthBPCoordinator], dict[str, Any]] | None = None
+
+
+@dataclass(frozen=True, kw_only=True)
+class RoutineSensorDescription(SensorEntityDescription):
+    """A value from the routine summary (baselines and today's slots)."""
+
+    value_fn: Callable[[RoutineSummary], Any]
+    attrs_fn: Callable[[RoutineSummary], dict[str, Any]] | None = None
 
 
 READING_SENSORS = (
@@ -115,6 +124,73 @@ STATE_SENSORS = (
 )
 
 
+def _pressure(
+    field: str, part: str, mean: Callable[[RoutineSummary], Mean | None]
+) -> RoutineSensorDescription:
+    return RoutineSensorDescription(
+        key=f"{field}_{part}", translation_key=f"{field}_{part}",
+        native_unit_of_measurement=UnitOfPressure.MMHG, suggested_display_precision=0,
+        value_fn=lambda s: getattr(m, part) if (m := mean(s)) else None,
+    )
+
+
+def _baseline_category(summary: RoutineSummary) -> str | None:
+    mean = summary.baseline_7d
+    return bp_category(round(mean.systolic), round(mean.diastolic)) if mean else None
+
+
+def _slot_attrs(slot: Callable[[RoutineSummary], SlotInfo]) -> Callable[[RoutineSummary], dict[str, Any]]:
+    def attrs(summary: RoutineSummary) -> dict[str, Any]:
+        info = slot(summary)
+        return {
+            "window_start": info.window_start.isoformat(),
+            "window_end": info.window_end.isoformat(),
+            "first_reading_at": info.first_reading_at.isoformat() if info.first_reading_at else None,
+            "mean_systolic": info.mean.systolic if info.mean else None,
+            "mean_diastolic": info.mean.diastolic if info.mean else None,
+            "reading_count": info.reading_count,
+        }
+
+    return attrs
+
+
+ROUTINE_SENSORS = (
+    *(
+        _pressure(field, part, getter)
+        for field, getter in (
+            ("baseline_7d", lambda s: s.baseline_7d),
+            ("baseline_30d", lambda s: s.baseline_30d),
+            ("morning_7d", lambda s: s.morning_7d),
+            ("evening_7d", lambda s: s.evening_7d),
+        )
+        for part in ("systolic", "diastolic")
+    ),
+    RoutineSensorDescription(
+        key="baseline_7d_category", translation_key="baseline_7d_category",
+        device_class=SensorDeviceClass.ENUM, options=list(BP_CATEGORIES),
+        value_fn=_baseline_category,
+    ),
+    RoutineSensorDescription(
+        key="slots_filled_7d", translation_key="slots_filled_7d",
+        value_fn=lambda s: s.slots_filled_7d,
+    ),
+    RoutineSensorDescription(
+        key="irregular_pulse_7d", translation_key="irregular_pulse_7d",
+        value_fn=lambda s: s.irregular_pulse_7d,
+    ),
+    RoutineSensorDescription(
+        key="morning_slot", translation_key="morning_slot",
+        device_class=SensorDeviceClass.ENUM, options=[s.value for s in SlotStatus],
+        value_fn=lambda s: s.morning.status.value, attrs_fn=_slot_attrs(lambda s: s.morning),
+    ),
+    RoutineSensorDescription(
+        key="evening_slot", translation_key="evening_slot",
+        device_class=SensorDeviceClass.ENUM, options=[s.value for s in SlotStatus],
+        value_fn=lambda s: s.evening.status.value, attrs_fn=_slot_attrs(lambda s: s.evening),
+    ),
+)
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: IHealthBPConfigEntry,
@@ -123,6 +199,7 @@ async def async_setup_entry(
     coordinator = entry.runtime_data
     entities: list[SensorEntity] = [ReadingSensor(coordinator, d) for d in READING_SENSORS]
     entities += [StateSensor(coordinator, d) for d in STATE_SENSORS]
+    entities += [RoutineSensor(coordinator, d) for d in ROUTINE_SENSORS]
     entities.append(ProtocolSensor(coordinator))
     async_add_entities(entities)
 
@@ -134,6 +211,21 @@ class ReadingSensor(IHealthBPEntity, SensorEntity):
     def native_value(self) -> Any:
         latest = self.coordinator.store.latest_imported()
         return self.entity_description.value_fn(latest) if latest else None
+
+
+class RoutineSensor(IHealthBPEntity, SensorEntity):
+    """Computed on read; the coordinator refreshes listeners at window boundaries."""
+
+    entity_description: RoutineSensorDescription
+
+    @property
+    def native_value(self) -> Any:
+        return self.entity_description.value_fn(self.coordinator.routine_summary())
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        attrs_fn = self.entity_description.attrs_fn
+        return attrs_fn(self.coordinator.routine_summary()) if attrs_fn else None
 
 
 class StateSensor(IHealthBPEntity, RestoreSensor):

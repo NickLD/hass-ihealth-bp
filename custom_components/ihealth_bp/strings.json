@@ -103,6 +103,104 @@
       },
       "connected_via": {
         "name": "Connected via"
+      },
+      "baseline_7d_systolic": {
+        "name": "Baseline systolic (7 days)"
+      },
+      "baseline_7d_diastolic": {
+        "name": "Baseline diastolic (7 days)"
+      },
+      "baseline_30d_systolic": {
+        "name": "Baseline systolic (30 days)"
+      },
+      "baseline_30d_diastolic": {
+        "name": "Baseline diastolic (30 days)"
+      },
+      "morning_7d_systolic": {
+        "name": "Morning systolic (7 days)"
+      },
+      "morning_7d_diastolic": {
+        "name": "Morning diastolic (7 days)"
+      },
+      "evening_7d_systolic": {
+        "name": "Evening systolic (7 days)"
+      },
+      "evening_7d_diastolic": {
+        "name": "Evening diastolic (7 days)"
+      },
+      "baseline_7d_category": {
+        "name": "Baseline category (7 days)",
+        "state": {
+          "normal": "Normal",
+          "elevated": "Elevated",
+          "hypertension_stage_1": "Hypertension stage 1",
+          "hypertension_stage_2": "Hypertension stage 2",
+          "hypertensive_crisis": "Hypertensive crisis"
+        }
+      },
+      "slots_filled_7d": {
+        "name": "Routine slots filled (7 days)"
+      },
+      "irregular_pulse_7d": {
+        "name": "Irregular pulse readings (7 days)"
+      },
+      "morning_slot": {
+        "name": "Morning slot",
+        "state": {
+          "filled": "Filled",
+          "open": "Open",
+          "upcoming": "Upcoming",
+          "closed": "Closed"
+        },
+        "state_attributes": {
+          "window_start": {
+            "name": "Window start"
+          },
+          "window_end": {
+            "name": "Window end"
+          },
+          "first_reading_at": {
+            "name": "First reading at"
+          },
+          "mean_systolic": {
+            "name": "Mean systolic"
+          },
+          "mean_diastolic": {
+            "name": "Mean diastolic"
+          },
+          "reading_count": {
+            "name": "Reading count"
+          }
+        }
+      },
+      "evening_slot": {
+        "name": "Evening slot",
+        "state": {
+          "filled": "Filled",
+          "open": "Open",
+          "upcoming": "Upcoming",
+          "closed": "Closed"
+        },
+        "state_attributes": {
+          "window_start": {
+            "name": "Window start"
+          },
+          "window_end": {
+            "name": "Window end"
+          },
+          "first_reading_at": {
+            "name": "First reading at"
+          },
+          "mean_systolic": {
+            "name": "Mean systolic"
+          },
+          "mean_diastolic": {
+            "name": "Mean diastolic"
+          },
+          "reading_count": {
+            "name": "Reading count"
+          }
+        }
       }
     },
     "binary_sensor": {
@@ -129,11 +227,48 @@
             "name": "Pending until the cuff next connects"
           }
         }
+      },
+      "flag_caffeine": {
+        "name": "Had caffeine"
+      },
+      "flag_ate": {
+        "name": "Just ate"
+      },
+      "flag_exertion": {
+        "name": "After exertion"
+      },
+      "flag_after_shower": {
+        "name": "After shower"
+      },
+      "flag_poor_sleep": {
+        "name": "Poor sleep"
+      },
+      "flag_alcohol": {
+        "name": "Alcohol last night"
+      },
+      "flag_stressed": {
+        "name": "Stressed"
+      },
+      "flag_missed_meds": {
+        "name": "Missed meds"
+      },
+      "flag_sick": {
+        "name": "Sick"
       }
     },
     "todo": {
       "readings": {
         "name": "Readings"
+      }
+    },
+    "text": {
+      "session_note": {
+        "name": "Session note"
+      }
+    },
+    "button": {
+      "discard_latest_session": {
+        "name": "Discard latest session"
       }
     }
   },
@@ -209,6 +344,9 @@
     },
     "nothing_to_set": {
       "message": "Give at least one of flags, add_flags or note."
+    },
+    "no_session": {
+      "message": "There is no session to discard."
     }
   },
   "selector": {

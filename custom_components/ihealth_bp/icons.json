@@ -33,6 +33,45 @@
       },
       "connected_via": {
         "default": "mdi:access-point"
+      },
+      "baseline_7d_systolic": {
+        "default": "mdi:heart-pulse"
+      },
+      "baseline_7d_diastolic": {
+        "default": "mdi:heart-pulse"
+      },
+      "baseline_30d_systolic": {
+        "default": "mdi:heart-pulse"
+      },
+      "baseline_30d_diastolic": {
+        "default": "mdi:heart-pulse"
+      },
+      "morning_7d_systolic": {
+        "default": "mdi:heart-pulse"
+      },
+      "morning_7d_diastolic": {
+        "default": "mdi:heart-pulse"
+      },
+      "evening_7d_systolic": {
+        "default": "mdi:heart-pulse"
+      },
+      "evening_7d_diastolic": {
+        "default": "mdi:heart-pulse"
+      },
+      "baseline_7d_category": {
+        "default": "mdi:clipboard-pulse-outline"
+      },
+      "slots_filled_7d": {
+        "default": "mdi:calendar-check"
+      },
+      "irregular_pulse_7d": {
+        "default": "mdi:heart-off-outline"
+      },
+      "morning_slot": {
+        "default": "mdi:weather-sunset-up"
+      },
+      "evening_slot": {
+        "default": "mdi:weather-night"
       }
     },
     "binary_sensor": {
@@ -49,11 +88,48 @@
       },
       "clock_display": {
         "default": "mdi:clock-digital"
+      },
+      "flag_caffeine": {
+        "default": "mdi:tag-outline"
+      },
+      "flag_ate": {
+        "default": "mdi:tag-outline"
+      },
+      "flag_exertion": {
+        "default": "mdi:tag-outline"
+      },
+      "flag_after_shower": {
+        "default": "mdi:tag-outline"
+      },
+      "flag_poor_sleep": {
+        "default": "mdi:tag-outline"
+      },
+      "flag_alcohol": {
+        "default": "mdi:tag-outline"
+      },
+      "flag_stressed": {
+        "default": "mdi:tag-outline"
+      },
+      "flag_missed_meds": {
+        "default": "mdi:tag-outline"
+      },
+      "flag_sick": {
+        "default": "mdi:tag-outline"
       }
     },
     "todo": {
       "readings": {
         "default": "mdi:format-list-checks"
+      }
+    },
+    "text": {
+      "session_note": {
+        "default": "mdi:note-text-outline"
+      }
+    },
+    "button": {
+      "discard_latest_session": {
+        "default": "mdi:delete-sweep-outline"
       }
     }
   },
