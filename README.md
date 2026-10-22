@@ -140,10 +140,17 @@ logging**), take a measurement, then disable it to download the log. The **Last 
 which stage of the last failed sync broke (`connect`, `auth`, `readings`, …), and the device page has
 **Download diagnostics** (the Bluetooth address and serial are redacted).
 
+From v0.1.1, a failed *connection* is only recorded as a failure if the cuff goes back to sleep
+without any successful sync, because the first attempt usually reaches the cuff while it is still
+measuring. Failures at any other stage are recorded immediately.
+
 - **Never syncs:** check that a proxy with `bluetooth_proxy: active: true` is close enough to the cuff,
   and that the iHealth app is not connected to the cuff at the same moment.
 - **Readings at the wrong time:** the cuff stores local time with no time zone; it is set from Home
-  Assistant's time zone on every sync.
+  Assistant's time zone on every sync. Home Assistant can only correct the clock when it connects, so
+  after a daylight-saving change, or a battery swap that resets the cuff's clock, a reading taken
+  before the next sync is stamped with the cuff's stale clock. That reading keeps the wrong time;
+  later readings are correct.
 
 The wire protocol is documented in [docs/protocol.md](docs/protocol.md).
 
