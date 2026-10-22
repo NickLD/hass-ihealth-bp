@@ -71,6 +71,80 @@ best and, in one short session:
 4. downloads every stored reading,
 5. saves new readings, then (by default) deletes them from the cuff.
 
+## Measurement routine
+
+Readings taken at random times are mostly noise. Home monitoring guidelines (the 2017 ACC/AHA
+guideline and the "722" protocol used in most studies) ask for a fixed routine: a **morning** and an
+**evening** session each day, **two readings per session, 1 minute apart**, averaged, for 7 days. The
+morning session is within about an hour of waking, before caffeine, food and medication; the evening
+one is before bed. Sit quietly for 5 minutes first, back supported, feet flat, arm at heart level, no
+talking, no caffeine or exercise in the previous 30 minutes. The integration organises your readings
+around that routine. It sends no reminders itself; you build those with ordinary automations (see the
+[example](#example-take-a-second-reading)). Sources:
+[PMC9532917](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC9532917/),
+[AHA handout](https://cpr.heart.org/-/media/Files/Health-Topics/High-Blood-Pressure/measuringbpathome.pdf),
+[AMA handout](https://map.ama-assn.org/sites/default/files/2024-05/How%20to%20measure%20blood%20pressure%20at%20home.pdf).
+
+### Periods and BP days
+
+Every reading gets a period from the time on the cuff (so a late sync does not matter):
+
+| Period | Default window | Notes |
+| :--- | :--- | :--- |
+| `morning` | 05:00-12:30 | |
+| `evening` | 21:00-03:00 | Wraps midnight: a 01:30 reading belongs to the previous day's evening |
+| `extra` | anything else | Never counts toward the baseline |
+
+A **BP day** starts when the morning window starts (05:00 by default) and lasts 24 hours. One reading
+fills a slot. The windows can be changed in the [options](#options).
+
+### Sessions
+
+Readings no more than **10 minutes apart** (chained) form one session. Each reading gets a
+`session_index` (1, 2, 3...), and the session has a mean systolic and diastolic. The session takes its
+period and BP day from its first reading.
+
+### Flags and notes
+
+Each reading can carry context **flags** and a free-text **note** (up to 255 characters). The flags
+are: had caffeine, just ate, after exertion, after shower, poor sleep, alcohol last night, stressed,
+missed meds, sick. Set them from the entities below (they act on the latest session) or with the
+`ihealth_bp.set_reading_context` action for any reading. They are stored with the reading and survive
+restarts.
+
+### What counts toward the baseline
+
+A reading counts when all of these hold:
+
+- it is imported (not held for review, not deleted);
+- its session is in the `morning` or `evening` period;
+- it has **no flags**;
+- the cuff did not mark it with **body movement** (the reading still fills the slot);
+- it was taken on or after the **routine start date**.
+
+Irregular pulse does *not* exclude a reading, because it is clinically meaningful rather than a
+measurement error; a sensor counts those readings instead. The baseline is the mean of the **session
+means**, one value per filled slot, so a three-reading session does not outweigh a two-reading one.
+The routine start date defaults to the day you upgraded to v0.2.0, so older readings never enter the
+baseline. Change it in the [options](#options).
+
+### Routine entities
+
+| Entity | Notes |
+| :--- | :--- |
+| Baseline systolic/diastolic (7 days), (30 days) | Mean of clean session means over the trailing window (mmHg) |
+| Morning systolic/diastolic (7 days), Evening systolic/diastolic (7 days) | Same, for one period only |
+| Baseline category (7 days) | ACC/AHA category of the 7-day baseline |
+| Routine slots filled (7 days) | 0-14 |
+| Irregular pulse readings (7 days) | Count of readings with the irregular-pulse flag |
+| Morning slot, Evening slot | Today's state: `filled`, `open`, `upcoming` or `closed`. Attributes: `window_start`, `window_end`, `first_reading_at`, `mean_systolic`, `mean_diastolic`, `reading_count`. Automations can read the window from these |
+| Had caffeine, Just ate, After exertion, After shower, Poor sleep, Alcohol last night, Stressed, Missed meds, Sick (switches) | Flag every reading of the latest session |
+| Session note (text) | Note for the latest session |
+| Discard latest session (button) | Deletes the latest session's readings |
+
+The sensors are recalculated after every new reading, flag change and delete, and at local midnight
+so the window slides.
+
 ## Entities
 
 | Entity | Notes |
@@ -109,12 +183,21 @@ Each imported reading fires an `ihealth_bp_measurement` event, oldest first:
 | `measured_at` | When the reading was taken (ISO 8601, Home Assistant time zone) |
 | `systolic`, `diastolic`, `pulse` | The reading |
 | `irregular_pulse`, `body_movement` | Flags |
+| `uid` | Unique id of the reading |
+| `bp_category` | ACC/AHA category of this reading |
+| `period` | `morning`, `evening` or `extra` |
+| `session_index` | Position of this reading in its session (1, 2, ...) |
+| `session_start` | Local time of the session's first reading (ISO 8601) |
+| `session_mean_systolic`, `session_mean_diastolic` | Mean of the session so far, including this reading |
+| `session_measured_at` | List of the session's reading times (ISO 8601) |
 
-## Removing bad readings
+The session fields are only present when the reading belongs to a session.
+
+## Removing and annotating readings
 
 Open the **Readings** list (it shows up in the To-do panel) and delete the reading. Home Assistant
 removes it from the statistics, and if it was the newest reading the sensors fall back to the previous
-one. A deleted reading is never imported again. The same is available as an action for scripts:
+one. A deleted reading is never imported again. The same is available as actions for scripts:
 
 ```yaml
 action: ihealth_bp.delete_reading
@@ -123,8 +206,73 @@ data:
   measured_at: "2026-10-21 15:09:02"
 ```
 
+`ihealth_bp.delete_session` deletes every reading of the session that contains `measured_at`, and
+rebuilds the statistics:
+
+```yaml
+action: ihealth_bp.delete_session
+data:
+  device_id: <your cuff's device id>
+  measured_at: "2026-10-21 15:09:02"
+```
+
+`ihealth_bp.set_reading_context` sets flags and a note on a reading, or on its whole session with
+`session: true`. `flags` replaces the existing flags, `add_flags` adds to them, and an empty `note`
+clears the note. Give at least one of `flags`, `add_flags` or `note`.
+
+```yaml
+action: ihealth_bp.set_reading_context
+data:
+  device_id: <your cuff's device id>
+  measured_at: "2026-10-21 15:09:02"
+  session: true
+  add_flags: [caffeine, ate]
+  note: Measured after breakfast
+```
+
+The flag names are `caffeine`, `ate`, `exertion`, `after_shower`, `poor_sleep`, `alcohol`,
+`stressed`, `missed_meds` and `sick`.
+
 Deleting cannot undo an `ihealth_bp_measurement` event that already fired (or automations it
 triggered), and the sensors' short-term history keeps the old value until the recorder purges it.
+
+### Example: take a second reading
+
+After the first reading of a session, notify the phone and offer to discard the session. The
+automation saves `measured_at` first, because `trigger` is replaced while waiting for the reply:
+
+```yaml
+automation:
+  - alias: Blood pressure - take a second reading
+    triggers:
+      - trigger: event
+        event_type: ihealth_bp_measurement
+    conditions:
+      - condition: template
+        value_template: "{{ trigger.event.data.session_index == 1 }}"
+    actions:
+      - variables:
+          measured_at: "{{ trigger.event.data.measured_at }}"
+      - action: notify.mobile_app_your_phone
+        data:
+          title: "{{ trigger.event.data.systolic }}/{{ trigger.event.data.diastolic }}"
+          message: Take a second reading in 1 minute
+          data:
+            actions:
+              - action: DISCARD_BP_SESSION
+                title: Discard
+      - wait_for_trigger:
+          - trigger: event
+            event_type: mobile_app_notification_action
+            event_data:
+              action: DISCARD_BP_SESSION
+        timeout: "00:05:00"
+        continue_on_timeout: false
+      - action: ihealth_bp.delete_session
+        data:
+          device_id: <your cuff's device id>
+          measured_at: "{{ measured_at }}"
+```
 
 ## Options
 
@@ -137,6 +285,11 @@ triggered), and the sensors' short-term history keeps the old value until the re
 - **Hold new readings for review before importing them** (default **off**). New readings arrive
   unticked in the Readings list. Tick one to import it (sensors, statistics and event), or delete it
   to discard it.
+- **Morning window starts / ends, Evening window starts / ends.** Defaults 05:00, 12:30, 21:00 and
+  03:00. The evening may end after midnight. The windows must not overlap and must fit within 24
+  hours from the morning start, which is also when a new BP day begins.
+- **Count readings toward the baseline from this date.** The routine start date; readings taken
+  before it are left out of the baseline.
 
 ## Troubleshooting
 
