@@ -143,3 +143,19 @@ async def test_deleting_an_already_deleted_reading_is_a_validation_error(hass):
         await readings.async_delete_todo_items([uid])
     assert (err.value.translation_domain, err.value.translation_key) == (
         DOMAIN, "reading_not_found")
+
+
+async def test_concurrent_delete_actions_give_validation_error(hass):
+    import asyncio
+
+    _, coordinator = await async_setup_cuff(hass)
+    await async_sync(hass, coordinator, cuff_with_two())
+    call = {"device_id": coordinator.device_id, "measured_at": "2026-10-21 14:52:31"}
+    results = await asyncio.gather(
+        hass.services.async_call(DOMAIN, "delete_reading", call, blocking=True),
+        hass.services.async_call(DOMAIN, "delete_reading", call, blocking=True),
+        return_exceptions=True,
+    )
+    errors = [r for r in results if isinstance(r, Exception)]
+    assert len(errors) == 1 and isinstance(errors[0], ServiceValidationError)
+    assert [i["summary"] for i in await items(hass)] == [LATEST]
