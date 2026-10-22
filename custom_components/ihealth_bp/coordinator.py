@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass, replace
-from datetime import datetime
+from datetime import date, datetime
 
 from homeassistant.components.bluetooth import (
     BluetoothChange,
@@ -24,13 +24,14 @@ from homeassistant.const import CONF_ADDRESS
 from homeassistant.core import CALLBACK_TYPE, CoreState, HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import issue_registry as ir
-from homeassistant.helpers.event import async_call_later
+from homeassistant.helpers.event import async_call_later, async_track_time_change
 from homeassistant.util import dt as dt_util
 
 from .connection import MODEL, async_connect
 from .const import (
     CONF_DELETE_AFTER_IMPORT,
     CONF_REVIEW_MODE,
+    CONF_ROUTINE_START,
     CONF_VARIANT,
     DOMAIN,
     EVENT_MEASUREMENT,
@@ -44,6 +45,14 @@ from .kn550bt.session import (
     SessionError,
 )
 from .kn550bt.variants import Variant
+from .routine import (
+    RoutineSummary,
+    Session,
+    Windows,
+    group_sessions,
+    summarize,
+    windows_from_options,
+)
 from .statistics import async_update_statistics
 from .storage import CuffStore, LoggedReading, ReadingStatus
 
@@ -103,6 +112,30 @@ class IHealthBPCoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
     def review_mode(self) -> bool:
         return self.entry.options.get(CONF_REVIEW_MODE, False)
 
+    @property
+    def windows(self) -> Windows:
+        return windows_from_options(self.entry.options)
+
+    @property
+    def routine_start(self) -> date:
+        value = self.entry.options.get(CONF_ROUTINE_START)
+        return date.fromisoformat(value) if value else dt_util.now().date()
+
+    def sessions(self) -> list[Session]:
+        """Sessions of imported readings, oldest first."""
+        return group_sessions(self.store.imported(), self.windows)
+
+    def session_of(self, uid: str) -> Session | None:
+        for session in self.sessions():
+            if any(r.uid == uid for r in session.readings):
+                return session
+        return None
+
+    def routine_summary(self, now: datetime | None = None) -> RoutineSummary:
+        return summarize(
+            self.store.imported(), self.windows, self.routine_start, now or dt_util.now()
+        )
+
     def needs_poll_for(
         self, service_info: BluetoothServiceInfoBleak, seconds_since_last_poll: float | None
     ) -> bool:
@@ -122,12 +155,30 @@ class IHealthBPCoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
             self.hass, self._async_on_packet, self.address
         )
 
+        w = self.windows
+        boundaries = {
+            (t.hour, t.minute, t.second)
+            for t in (w.morning_start, w.morning_end, w.evening_start, w.evening_end)
+        } | {(0, 0, 0)}
+        cancel_times = [
+            async_track_time_change(
+                self.hass, self._async_on_boundary, hour=h, minute=m, second=sec
+            )
+            for h, m, sec in sorted(boundaries)
+        ]
+
         @callback
         def _cancel() -> None:
             cancel_changes()
             cancel_packets()
+            for cancel in cancel_times:
+                cancel()
 
         return _cancel
+
+    @callback
+    def _async_on_boundary(self, _now: datetime) -> None:
+        self.async_update_listeners()
 
     @callback
     def _async_on_packet(self, service_info: BluetoothServiceInfoBleak) -> None:

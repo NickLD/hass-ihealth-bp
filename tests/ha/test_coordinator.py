@@ -338,3 +338,48 @@ async def test_connect_failure_retries_on_next_packet(hass):
         await coordinator.async_sync(retry)
     assert cuff.readings == []
     assert coordinator.needs_poll_for(retry, 5.0) is False  # back to once per wake
+
+
+async def test_routine_start_defaults_to_today_once(hass, freezer):
+    freezer.move_to("2026-10-21 15:00:00+00:00")  # 10:00 local (America/Chicago)
+    with patch.object(hass.config_entries, "async_reload") as reload:
+        entry, _ = await setup(hass)
+        assert entry.options["routine_start"] == "2026-10-21"
+        freezer.move_to("2026-10-25 15:00:00+00:00")
+        assert await hass.config_entries.async_unload(entry.entry_id)
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+    assert entry.options["routine_start"] == "2026-10-21"
+    reload.assert_not_called()
+
+
+async def test_boundary_listeners_update(hass, freezer):
+    freezer.move_to("2026-10-21 14:30:00+00:00")  # 09:30 local (America/Chicago)
+    _, coordinator = await setup(hass)
+    local = dt_util.get_time_zone("America/Chicago")
+    with patch.object(coordinator, "async_update_listeners") as update:
+        # In time order: each firing moves the clock to the boundary, then re-arms.
+        for day, hhmm, expected in [
+            (21, (10, 0), False), (21, (12, 30), True), (21, (21, 0), True),
+            (22, (0, 0), True), (22, (3, 0), True), (22, (5, 0), True),
+        ]:
+            update.reset_mock()
+            when = datetime(2026, 10, day, *hhmm, tzinfo=local)
+            freezer.move_to(when)
+            async_fire_time_changed(hass, when)
+            await hass.async_block_till_done()
+            assert update.called is expected, (day, hhmm)
+
+
+async def test_coordinator_sessions_and_summary(hass, freezer):
+    _, coordinator = await setup(hass)
+    await sync(hass, coordinator, cuff_with_two())
+    sessions = coordinator.sessions()
+    assert [len(s.readings) for s in sessions] == [1, 1]
+    assert sessions[0].start < sessions[1].start
+    uid = sessions[1].readings[0].uid
+    assert coordinator.session_of(uid) == sessions[1]
+    assert coordinator.session_of("nope") is None
+    assert coordinator.windows.morning_start.hour == 5
+    assert coordinator.routine_start.isoformat() == dt_util.now().date().isoformat()
+    assert coordinator.routine_summary(T0.astimezone()) is not None

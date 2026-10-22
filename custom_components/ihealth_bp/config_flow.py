@@ -17,11 +17,24 @@ from homeassistant.config_entries import (
 )
 from homeassistant.const import CONF_ADDRESS
 from homeassistant.core import callback
+from homeassistant.helpers.selector import DateSelector, TimeSelector
+from homeassistant.util import dt as dt_util
 
 from .connection import MODEL, async_read_model
-from .const import CONF_DELETE_AFTER_IMPORT, CONF_REVIEW_MODE, CONF_VARIANT, DOMAIN
+from .const import (
+    CONF_DELETE_AFTER_IMPORT,
+    CONF_EVENING_END,
+    CONF_EVENING_START,
+    CONF_MORNING_END,
+    CONF_MORNING_START,
+    CONF_REVIEW_MODE,
+    CONF_ROUTINE_START,
+    CONF_VARIANT,
+    DOMAIN,
+)
 from .kn550bt.variants import Variant, variant_from_service_uuids
 from .rejected import async_get_rejected
+from .routine import windows_from_options
 
 DEFAULT_OPTIONS = {CONF_DELETE_AFTER_IMPORT: True, CONF_REVIEW_MODE: False}
 
@@ -114,22 +127,41 @@ class IHealthBPConfigFlow(ConfigFlow, domain=DOMAIN):
 
 
 class IHealthBPOptionsFlow(OptionsFlow):
-    """Options: what to do with readings once imported."""
+    """Options: what to do with readings once imported, and the measurement routine."""
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
+        errors: dict[str, str] = {}
         if user_input is not None:
-            return self.async_create_entry(data=user_input)
-        options = {**DEFAULT_OPTIONS, **self.config_entry.options}
+            if windows_from_options(user_input).valid():
+                return self.async_create_entry(data=user_input)
+            errors["base"] = "invalid_windows"
+        options = {**DEFAULT_OPTIONS, **self.config_entry.options, **(user_input or {})}
+        windows = windows_from_options(options)
+        routine_start = options.get(CONF_ROUTINE_START) or dt_util.now().date().isoformat()
         return self.async_show_form(
             step_id="init",
+            errors=errors,
             data_schema=vol.Schema(
                 {
                     vol.Required(
                         CONF_DELETE_AFTER_IMPORT, default=options[CONF_DELETE_AFTER_IMPORT]
                     ): bool,
                     vol.Required(CONF_REVIEW_MODE, default=options[CONF_REVIEW_MODE]): bool,
+                    vol.Required(
+                        CONF_MORNING_START, default=windows.morning_start.isoformat()
+                    ): TimeSelector(),
+                    vol.Required(
+                        CONF_MORNING_END, default=windows.morning_end.isoformat()
+                    ): TimeSelector(),
+                    vol.Required(
+                        CONF_EVENING_START, default=windows.evening_start.isoformat()
+                    ): TimeSelector(),
+                    vol.Required(
+                        CONF_EVENING_END, default=windows.evening_end.isoformat()
+                    ): TimeSelector(),
+                    vol.Required(CONF_ROUTINE_START, default=routine_start): DateSelector(),
                 }
             ),
         )

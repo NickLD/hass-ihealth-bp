@@ -26,13 +26,21 @@
       "init": {
         "data": {
           "delete_after_import": "Delete readings from the cuff after importing them (this is what the iHealth app does — turn off if you still use the app)",
-          "review_mode": "Hold new readings for review before importing them"
+          "review_mode": "Hold new readings for review before importing them",
+          "morning_start": "Morning window starts (also when a new BP day begins)",
+          "morning_end": "Morning window ends",
+          "evening_start": "Evening window starts",
+          "evening_end": "Evening window ends (may be after midnight)",
+          "routine_start": "Count readings toward the baseline from this date"
         },
         "data_description": {
           "delete_after_import": "Readings are only deleted after Home Assistant has saved them. With this off, the cuff keeps its readings (up to 99) for the iHealth app.",
           "review_mode": "New readings appear unticked in the Readings list. Tick a reading to import it, or delete it to discard it."
         }
       }
+    },
+    "error": {
+      "invalid_windows": "The windows must not overlap: morning, then evening, all within 24 hours starting at the morning start."
     }
   },
   "issues": {

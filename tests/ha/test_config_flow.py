@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 from homeassistant.config_entries import SOURCE_BLUETOOTH, SOURCE_USER
 from homeassistant.data_entry_flow import FlowResultType
+from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.ihealth_bp.const import (
@@ -131,4 +132,58 @@ async def test_options_defaults_and_update(hass):
         result["flow_id"], {CONF_DELETE_AFTER_IMPORT: False, CONF_REVIEW_MODE: True}
     )
     assert result["type"] is FlowResultType.CREATE_ENTRY
-    assert entry.options == {CONF_DELETE_AFTER_IMPORT: False, CONF_REVIEW_MODE: True}
+    assert entry.options == {
+        CONF_DELETE_AFTER_IMPORT: False, CONF_REVIEW_MODE: True,
+        "morning_start": "05:00:00", "morning_end": "12:30:00",
+        "evening_start": "21:00:00", "evening_end": "03:00:00",
+        "routine_start": dt_util.now().date().isoformat(),
+    }
+
+
+ROUTINE_OPTIONS = {
+    CONF_DELETE_AFTER_IMPORT: True, CONF_REVIEW_MODE: False,
+    "morning_start": "06:00:00", "morning_end": "11:00:00",
+    "evening_start": "20:00:00", "evening_end": "01:00:00",
+    "routine_start": "2026-10-01",
+}
+
+
+def _routine_entry(hass):
+    entry = MockConfigEntry(
+        domain=DOMAIN, unique_id=ADDRESS,
+        data={"address": ADDRESS, "variant": "com.jiuan.dev"}, options=dict(ROUTINE_OPTIONS),
+    )
+    entry.add_to_hass(hass)
+    return entry
+
+
+async def test_options_flow_routine_fields(hass):
+    entry = _routine_entry(hass)
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    schema = result["data_schema"].schema
+    assert {str(k) for k in schema} == {
+        CONF_DELETE_AFTER_IMPORT, CONF_REVIEW_MODE, "morning_start", "morning_end",
+        "evening_start", "evening_end", "routine_start",
+    }
+    defaults = {str(k): k.default() for k in schema}
+    assert defaults == ROUTINE_OPTIONS
+    from homeassistant.helpers.selector import DateSelector, TimeSelector
+
+    by_name = {str(k): v for k, v in schema.items()}
+    assert isinstance(by_name["morning_start"], TimeSelector)
+    assert isinstance(by_name["routine_start"], DateSelector)
+    new = {**ROUTINE_OPTIONS, "morning_start": "07:00:00", "routine_start": "2026-10-05"}
+    result = await hass.config_entries.options.async_configure(result["flow_id"], new)
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert entry.options == new
+
+
+async def test_options_flow_rejects_invalid_windows(hass):
+    entry = _routine_entry(hass)
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {**ROUTINE_OPTIONS, "evening_start": "10:00:00"}
+    )
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"base": "invalid_windows"}
+    assert entry.options == ROUTINE_OPTIONS
