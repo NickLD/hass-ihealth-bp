@@ -9,3 +9,68 @@ delete_reading:
       required: true
       selector:
         datetime:
+delete_session:
+  fields:
+    device_id:
+      required: true
+      selector:
+        device:
+          integration: ihealth_bp
+    measured_at:
+      required: true
+      selector:
+        datetime:
+set_reading_context:
+  fields:
+    device_id:
+      required: true
+      selector:
+        device:
+          integration: ihealth_bp
+    measured_at:
+      required: true
+      selector:
+        datetime:
+    session:
+      required: false
+      default: false
+      selector:
+        boolean:
+    flags:
+      required: false
+      selector:
+        select:
+          multiple: true
+          mode: list
+          translation_key: flags
+          options:
+            - caffeine
+            - ate
+            - exertion
+            - after_shower
+            - poor_sleep
+            - alcohol
+            - stressed
+            - missed_meds
+            - sick
+    add_flags:
+      required: false
+      selector:
+        select:
+          multiple: true
+          mode: list
+          translation_key: flags
+          options:
+            - caffeine
+            - ate
+            - exertion
+            - after_shower
+            - poor_sleep
+            - alcohol
+            - stressed
+            - missed_meds
+            - sick
+    note:
+      required: false
+      selector:
+        text:

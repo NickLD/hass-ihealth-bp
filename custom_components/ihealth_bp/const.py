@@ -7,6 +7,8 @@ CONF_REVIEW_MODE = "review_mode"
 
 EVENT_MEASUREMENT = "ihealth_bp_measurement"
 SERVICE_DELETE_READING = "delete_reading"
+SERVICE_SET_READING_CONTEXT = "set_reading_context"
+SERVICE_DELETE_SESSION = "delete_session"
 
 # Seconds an advertisement must follow the previous session before we connect again.
 POLL_INTERVAL_S = 30

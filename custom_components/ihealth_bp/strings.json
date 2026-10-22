@@ -151,6 +151,50 @@
           "description": "When the reading was taken (local time, to the second)."
         }
       }
+    },
+    "delete_session": {
+      "name": "Delete session",
+      "description": "Deletes every reading of the measurement session containing the given reading, and rebuilds statistics. Events already fired are not undone.",
+      "fields": {
+        "device_id": {
+          "name": "Device",
+          "description": "The blood pressure monitor."
+        },
+        "measured_at": {
+          "name": "Measured at",
+          "description": "When any reading of the session was taken (local time, to the second)."
+        }
+      }
+    },
+    "set_reading_context": {
+      "name": "Set reading context",
+      "description": "Sets context flags and a note on a reading, or on its whole session.",
+      "fields": {
+        "device_id": {
+          "name": "Device",
+          "description": "The blood pressure monitor."
+        },
+        "measured_at": {
+          "name": "Measured at",
+          "description": "When any reading of the session was taken (local time, to the second)."
+        },
+        "session": {
+          "name": "Whole session",
+          "description": "Apply to every reading in the session instead of only this one."
+        },
+        "flags": {
+          "name": "Flags",
+          "description": "Replace the reading's flags with these."
+        },
+        "add_flags": {
+          "name": "Add flags",
+          "description": "Add these flags, keeping the existing ones."
+        },
+        "note": {
+          "name": "Note",
+          "description": "Free-text note (up to 255 characters). An empty note clears it."
+        }
+      }
     }
   },
   "exceptions": {
@@ -162,6 +206,24 @@
     },
     "item_change_not_allowed": {
       "message": "Readings cannot be renamed or un-ticked. Tick a pending reading to import it, or delete it."
+    },
+    "nothing_to_set": {
+      "message": "Give at least one of flags, add_flags or note."
+    }
+  },
+  "selector": {
+    "flags": {
+      "options": {
+        "caffeine": "Caffeine",
+        "ate": "Ate",
+        "exertion": "Exertion",
+        "after_shower": "After shower",
+        "poor_sleep": "Poor sleep",
+        "alcohol": "Alcohol",
+        "stressed": "Stressed",
+        "missed_meds": "Missed meds",
+        "sick": "Sick"
+      }
     }
   }
 }

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass, replace
+from collections.abc import Iterable
 from datetime import date, datetime
 
 from homeassistant.components.bluetooth import (
@@ -37,6 +38,7 @@ from .const import (
     EVENT_MEASUREMENT,
     POLL_INTERVAL_S,
 )
+from .derived import bp_category
 from .kn550bt.session import (
     Capabilities,
     DeviceInfo,
@@ -89,6 +91,7 @@ class IHealthBPCoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
         self.variant = Variant(entry.data.get(CONF_VARIANT, Variant.DEV.value))
         self.state = CuffState()
         self._session_lock = asyncio.Lock()
+        self._delete_lock = asyncio.Lock()
         self._closed = False
         self._last_session_adv_time: float | None = None
         self._retry_connect = False
@@ -335,9 +338,25 @@ class IHealthBPCoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
         self.state.failure_reason = reason
 
     def fire_measurement_event(self, reading: LoggedReading) -> None:
+        session = self.session_of(reading.uid)
+        session_info: dict[str, object] = {}
+        if session is not None:
+            session_info = {
+                "period": session.period.value,
+                "session_index": session.index_of(reading.uid),
+                "session_start": dt_util.as_local(session.start).isoformat(),
+                "session_mean_systolic": session.mean_systolic,
+                "session_mean_diastolic": session.mean_diastolic,
+                "session_measured_at": [
+                    dt_util.as_local(t).isoformat() for t in session.measured_at
+                ],
+            }
         self.hass.bus.async_fire(
             EVENT_MEASUREMENT,
             {
+                "uid": reading.uid,
+                "bp_category": bp_category(reading.systolic, reading.diastolic),
+                **session_info,
                 "device_id": self.device_id,
                 "address": self.address,
                 "measured_at": dt_util.as_local(reading.measured_at).isoformat(),
@@ -362,6 +381,43 @@ class IHealthBPCoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
         await self.store.async_set_status(uid, ReadingStatus.DELETED)
         if reading.status is ReadingStatus.IMPORTED:
             await self.async_refresh_statistics({reading.measured_at})
+        self.async_update_listeners()
+
+    async def async_set_context(
+        self,
+        uid: str,
+        *,
+        session: bool = False,
+        flags: Iterable[str] | None = None,
+        add_flags: Iterable[str] = (),
+        remove_flags: Iterable[str] = (),
+        note: str | None = None,
+    ) -> None:
+        """Set flags/note on a reading, or on its whole session."""
+        reading = self.store.find(uid)
+        if reading is None or reading.status is ReadingStatus.DELETED:
+            raise KeyError(uid)
+        uids = [uid]
+        if session and (found := self.session_of(uid)) is not None:
+            uids = [r.uid for r in found.readings]
+        await self.store.async_set_context(
+            uids, flags=flags, add_flags=add_flags, remove_flags=remove_flags, note=note
+        )
+        self.async_update_listeners()
+
+    async def async_delete_session(self, uid: str) -> None:
+        """Delete every reading of the session containing uid, rebuilding statistics once."""
+        async with self._delete_lock:
+            reading = self.store.find(uid)
+            if reading is None or reading.status is ReadingStatus.DELETED:
+                raise KeyError(uid)
+            session = self.session_of(uid)
+            targets = list(session.readings) if session is not None else [reading]
+            for target in targets:
+                await self.store.async_set_status(target.uid, ReadingStatus.DELETED)
+            hours = {t.measured_at for t in targets if t.status is ReadingStatus.IMPORTED}
+            if hours:
+                await self.async_refresh_statistics(hours)
         self.async_update_listeners()
 
     async def async_approve_reading(self, uid: str) -> None:

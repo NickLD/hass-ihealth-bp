@@ -60,6 +60,12 @@
   "services": {
     "delete_reading": {
       "service": "mdi:delete-outline"
+    },
+    "set_reading_context": {
+      "service": "mdi:tag-text-outline"
+    },
+    "delete_session": {
+      "service": "mdi:delete-sweep-outline"
     }
   }
 }
