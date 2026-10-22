@@ -24,6 +24,7 @@ from homeassistant.const import CONF_ADDRESS
 from homeassistant.core import CALLBACK_TYPE, CoreState, HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import issue_registry as ir
+from homeassistant.helpers.event import async_call_later
 from homeassistant.util import dt as dt_util
 
 from .connection import MODEL, async_connect
@@ -47,6 +48,11 @@ from .statistics import async_update_statistics
 from .storage import CuffStore, LoggedReading, ReadingStatus
 
 _LOGGER = logging.getLogger(__name__)
+
+# The cuff advertises from the moment a measurement starts but only accepts a connection
+# once it is done, so most wakes begin with a failed connect. Only report one if no session
+# succeeds before the cuff goes back to sleep.
+CONNECT_FAILURE_GRACE_S = 60
 
 
 @dataclass
@@ -77,6 +83,8 @@ class IHealthBPCoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
         self._closed = False
         self._last_session_adv_time: float | None = None
         self._retry_connect = False
+        self._connect_failure: tuple[datetime, str] | None = None
+        self._cancel_connect_failure: CALLBACK_TYPE | None = None
         super().__init__(
             hass,
             _LOGGER,
@@ -129,6 +137,7 @@ class IHealthBPCoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
     async def async_close(self) -> None:
         """Stop new sessions and wait for a running one, so a reload never races it."""
         self._closed = True
+        self._discard_connect_failure()
         async with self._session_lock:
             pass
 
@@ -166,9 +175,13 @@ class IHealthBPCoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
                 self._retry_connect = True
                 raise SessionError("connect", f"{type(err).__name__}: {err}") from err
             self._retry_connect = False
+            self._discard_connect_failure()  # whatever happens next is reported on its own
             await self._async_run(KN550BTSession(client, self.variant))
         except SessionError as err:
-            self._record_failure(err.stage, str(err))
+            if err.stage == "connect":
+                self._defer_connect_failure(str(err))
+            else:
+                self._record_failure(err.stage, str(err))
         except Exception as err:  # noqa: BLE001 - never let a sync crash the coordinator
             _LOGGER.exception("Unexpected error syncing %s", self.address)
             self._record_failure("unexpected", f"{type(err).__name__}: {err}")
@@ -232,9 +245,33 @@ class IHealthBPCoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
         self.state.last_sync = dt_util.utcnow()
         self.state.failure_stage = self.state.failure_reason = None
 
-    def _record_failure(self, stage: str, reason: str) -> None:
+    def _defer_connect_failure(self, reason: str) -> None:
+        """Hold a connect failure; it is recorded only if the cuff sleeps without a session."""
+        _LOGGER.debug("Could not connect to %s yet, will retry: %s", self.address, reason)
+        self._connect_failure = (dt_util.utcnow(), reason)
+        if self._cancel_connect_failure is None:
+            self._cancel_connect_failure = async_call_later(
+                self.hass, CONNECT_FAILURE_GRACE_S, self._async_connect_failure_expired
+            )
+
+    @callback
+    def _async_connect_failure_expired(self, _now: datetime) -> None:
+        self._cancel_connect_failure = None
+        if self._connect_failure is not None:
+            at, reason = self._connect_failure
+            self._connect_failure = None
+            self._record_failure("connect", reason, at)
+            self.async_update_listeners()
+
+    def _discard_connect_failure(self) -> None:
+        self._connect_failure = None
+        if self._cancel_connect_failure is not None:
+            self._cancel_connect_failure()
+            self._cancel_connect_failure = None
+
+    def _record_failure(self, stage: str, reason: str, at: datetime | None = None) -> None:
         _LOGGER.warning("Sync with %s failed during %s: %s", self.address, stage, reason)
-        self.state.last_failure = dt_util.utcnow()
+        self.state.last_failure = at or dt_util.utcnow()
         self.state.failure_stage = stage
         self.state.failure_reason = reason
 

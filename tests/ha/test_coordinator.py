@@ -6,9 +6,14 @@ from unittest.mock import patch
 import pytest
 from homeassistant.components.bluetooth import async_get_advertisement_callback
 from homeassistant.helpers import issue_registry as ir
-from pytest_homeassistant_custom_component.common import async_capture_events
+from homeassistant.util import dt as dt_util
+from pytest_homeassistant_custom_component.common import (
+    async_capture_events,
+    async_fire_time_changed,
+)
 
 from custom_components.ihealth_bp.const import DOMAIN, EVENT_MEASUREMENT
+from custom_components.ihealth_bp.coordinator import CONNECT_FAILURE_GRACE_S
 from custom_components.ihealth_bp.kn550bt.session import DisplaySettings
 from custom_components.ihealth_bp.storage import ReadingStatus
 
@@ -82,12 +87,62 @@ async def test_failure_before_download_persists_nothing(hass):
     assert coordinator.state.last_failure is not None
 
 
-async def test_connect_failure_is_recorded(hass):
+async def after_grace_period(hass) -> None:
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=CONNECT_FAILURE_GRACE_S + 1))
+    await hass.async_block_till_done()
+
+
+async def test_connect_failure_is_recorded_once_the_cuff_sleeps(hass):
+    assert CONNECT_FAILURE_GRACE_S == 60
     _, coordinator = await setup(hass)
     with patch(CONNECT, side_effect=TimeoutError("no slot")):
         await coordinator.async_sync(make_service_info())
+    assert coordinator.state.last_failure is None  # held: the cuff may still be measuring
+    await after_grace_period(hass)
     assert coordinator.state.failure_stage == "connect"
     assert "no slot" in coordinator.state.failure_reason
+    assert coordinator.state.last_failure is not None
+    assert hass.states.get("sensor.kn_550bt_last_failure").attributes["stage"] == "connect"
+
+
+async def test_connect_failure_then_success_in_same_wake_is_not_recorded(hass):
+    _, coordinator = await setup(hass)
+    first = make_service_info()
+    with patch(CONNECT, side_effect=TimeoutError("busy measuring")):
+        await coordinator.async_sync(first)
+    retry = make_service_info()
+    retry.time = first.time + 5
+    with patch(CONNECT, return_value=cuff_with_two()):
+        await coordinator.async_sync(retry)
+    await after_grace_period(hass)
+    assert coordinator.state.last_sync is not None
+    assert coordinator.state.last_failure is None
+    assert coordinator.state.failure_stage is None
+
+
+async def test_later_failure_in_same_wake_is_recorded_at_once_and_kept(hass):
+    _, coordinator = await setup(hass)
+    first = make_service_info()
+    with patch(CONNECT, side_effect=TimeoutError("busy measuring")):
+        await coordinator.async_sync(first)
+    cuff = cuff_with_two()
+    cuff.disconnect_on = {0x40}
+    retry = make_service_info()
+    retry.time = first.time + 5
+    with patch(CONNECT, return_value=cuff):
+        await coordinator.async_sync(retry)
+    assert coordinator.state.failure_stage == "readings"
+    await after_grace_period(hass)
+    assert coordinator.state.failure_stage == "readings"  # not replaced by the stale connect
+
+
+async def test_unload_drops_pending_connect_failure(hass):
+    entry, coordinator = await setup(hass)
+    with patch(CONNECT, side_effect=TimeoutError("no slot")):
+        await coordinator.async_sync(make_service_info())
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    await after_grace_period(hass)
+    assert coordinator.state.last_failure is None
 
 
 async def test_review_mode_logs_pending_without_events_and_still_deletes(hass):
@@ -233,7 +288,6 @@ async def test_connect_failure_retries_on_next_packet(hass):
     first = make_service_info()
     with patch(CONNECT, side_effect=TimeoutError("busy measuring")):
         await coordinator.async_sync(first)
-    assert coordinator.state.failure_stage == "connect"
     assert coordinator.needs_poll_for(first, 5.0) is True  # no 30 s wait after a connect failure
     cuff = cuff_with_two()
     retry = make_service_info()
