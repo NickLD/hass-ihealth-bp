@@ -128,3 +128,18 @@ async def test_cannot_create_or_rename_items(hass):
             "todo", "update_item",
             {ATTR_ENTITY_ID: TODO, "item": LATEST, "status": "needs_action"}, blocking=True,
         )
+
+
+async def test_deleting_an_already_deleted_reading_is_a_validation_error(hass):
+    """Two deletes racing for the same reading: the loser gets a clean error."""
+    from homeassistant.components.todo.const import DATA_COMPONENT
+
+    _, coordinator = await async_setup_cuff(hass)
+    await async_sync(hass, coordinator, cuff_with_two())
+    readings = hass.data[DATA_COMPONENT].get_entity(TODO)
+    uid = coordinator.store.latest_imported().uid
+    await readings.async_delete_todo_items([uid])
+    with pytest.raises(ServiceValidationError) as err:
+        await readings.async_delete_todo_items([uid])
+    assert (err.value.translation_domain, err.value.translation_key) == (
+        DOMAIN, "reading_not_found")

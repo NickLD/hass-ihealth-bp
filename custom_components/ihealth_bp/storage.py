@@ -74,7 +74,10 @@ class CuffStore:
 
     def __init__(self, hass: HomeAssistant, address: str) -> None:
         key = f"{DOMAIN}.{address.replace(':', '').lower()}"
-        self._store: Store[dict[str, Any]] = Store(hass, STORAGE_VERSION, key)
+        # Atomic (fsynced) writes: the cuff wipes its memory once a save returns.
+        self._store: Store[dict[str, Any]] = Store(
+            hass, STORAGE_VERSION, key, atomic_writes=True
+        )
         self._readings: dict[str, LoggedReading] = {}
         self._pending_display: dict[str, bool] = {}
 
