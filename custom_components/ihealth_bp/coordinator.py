@@ -137,9 +137,9 @@ class IHealthBPCoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
     async def async_close(self) -> None:
         """Stop new sessions and wait for a running one, so a reload never races it."""
         self._closed = True
-        self._discard_connect_failure()
         async with self._session_lock:
             pass
+        self._discard_connect_failure()  # after the running session, which may have set one
 
     async def async_sync(self, service_info: BluetoothServiceInfoBleak) -> None:
         """One complete session. Never raises: failures are recorded for diagnostics."""

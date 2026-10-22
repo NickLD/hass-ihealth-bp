@@ -145,6 +145,29 @@ async def test_unload_drops_pending_connect_failure(hass):
     assert coordinator.state.last_failure is None
 
 
+async def test_connect_failure_while_closing_is_dropped(hass):
+    import asyncio
+
+    _, coordinator = await setup(hass)
+    connecting, fail = asyncio.Event(), asyncio.Event()
+
+    async def slow_failing_connect(*args, **kwargs):
+        connecting.set()
+        await fail.wait()
+        raise TimeoutError("no slot")
+
+    with patch(CONNECT, slow_failing_connect):
+        sync_task = hass.async_create_task(coordinator.async_sync(make_service_info()))
+        await connecting.wait()
+        close_task = hass.async_create_task(coordinator.async_close())
+        await asyncio.sleep(0)
+        fail.set()
+        await sync_task
+        await close_task
+    await after_grace_period(hass)
+    assert coordinator.state.last_failure is None
+
+
 async def test_review_mode_logs_pending_without_events_and_still_deletes(hass):
     _, coordinator = await setup(hass, review=True)
     events = async_capture_events(hass, EVENT_MEASUREMENT)
