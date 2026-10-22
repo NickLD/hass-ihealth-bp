@@ -161,6 +161,13 @@ async def test_delete_session_refreshes_all_hours(hass):
 async def test_concurrent_delete_session(hass):
     _, coordinator = await async_setup_cuff(hass)
     await async_sync(hass, coordinator, two_readings())
+    original_save = coordinator.store._async_save
+
+    async def yielding_save(*args, **kwargs):
+        await asyncio.sleep(0)  # let the other call interleave, as a real disk write would
+        return await original_save(*args, **kwargs)
+
+    coordinator.store._async_save = yielding_save
     with patch.object(
         coordinator, "async_refresh_statistics", wraps=coordinator.async_refresh_statistics
     ) as refresh:
