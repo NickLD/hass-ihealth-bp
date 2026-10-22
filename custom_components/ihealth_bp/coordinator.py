@@ -199,7 +199,7 @@ class IHealthBPCoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
             ir.async_create_issue(
                 self.hass,
                 DOMAIN,
-                f"unsupported_device_{self.entry.entry_id}",
+                self._unsupported_issue_id,
                 is_fixable=False,
                 severity=ir.IssueSeverity.ERROR,
                 translation_key="unsupported_device",
@@ -208,7 +208,10 @@ class IHealthBPCoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
             raise SessionError("device_info", f"unsupported model {info.model!r}")
         self.state.info = info
         dr.async_get(self.hass).async_update_device(
-            self.device_id, sw_version=info.firmware or None, hw_version=info.hardware or None
+            self.device_id,
+            sw_version=info.firmware or None,
+            hw_version=info.hardware or None,
+            serial_number=info.serial or None,
         )
 
         await session.open()
@@ -244,6 +247,11 @@ class IHealthBPCoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
 
         self.state.last_sync = dt_util.utcnow()
         self.state.failure_stage = self.state.failure_reason = None
+        ir.async_delete_issue(self.hass, DOMAIN, self._unsupported_issue_id)
+
+    @property
+    def _unsupported_issue_id(self) -> str:
+        return f"unsupported_device_{self.entry.entry_id}"
 
     def _defer_connect_failure(self, reason: str) -> None:
         """Hold a connect failure; it is recorded only if the cuff sleeps without a session."""

@@ -175,6 +175,25 @@ async def test_wrong_model_raises_repair_issue(hass):
     assert cuff.received == []  # never authenticated or asked for anything
 
 
+
+async def test_successful_sync_clears_unsupported_device_issue(hass):
+    entry, coordinator = await setup(hass)
+    issue_id = f"unsupported_device_{entry.entry_id}"
+    await sync(hass, coordinator, FakeCuff(model=b"BG5S\x00"))
+    assert ir.async_get(hass).async_get_issue(DOMAIN, issue_id) is not None
+    await sync(hass, coordinator, cuff_with_two())
+    assert ir.async_get(hass).async_get_issue(DOMAIN, issue_id) is None
+
+
+async def test_device_registry_gets_versions_and_serial(hass):
+    from homeassistant.helpers import device_registry as dr
+
+    _, coordinator = await setup(hass)
+    await sync(hass, coordinator, cuff_with_two())
+    device = dr.async_get(hass).async_get(coordinator.device_id)
+    assert (device.sw_version, device.hw_version) == ("303", "300")
+    assert device.serial_number == "004D32650E89"
+
 @pytest.mark.parametrize(("age", "expected"), [(None, True), (5.0, False), (31.0, True)])
 async def test_needs_poll_threshold(hass, age, expected):
     _, coordinator = await setup(hass)
