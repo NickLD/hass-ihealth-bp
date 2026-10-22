@@ -145,3 +145,144 @@ def group_sessions(readings: Iterable[LoggedReading], windows: Windows) -> list[
         )
         for g in groups
     ]
+
+
+class SlotStatus(StrEnum):
+    FILLED = "filled"
+    OPEN = "open"
+    UPCOMING = "upcoming"
+    CLOSED = "closed"
+
+
+@dataclass(frozen=True)
+class Mean:
+    systolic: float
+    diastolic: float
+
+
+@dataclass(frozen=True)
+class SlotInfo:
+    status: SlotStatus
+    window_start: datetime
+    window_end: datetime
+    first_reading_at: datetime | None
+    mean: Mean | None  # every reading in the slot, clean or not, for display
+    reading_count: int
+
+
+@dataclass(frozen=True)
+class RoutineSummary:
+    baseline_7d: Mean | None
+    baseline_30d: Mean | None
+    morning_7d: Mean | None
+    evening_7d: Mean | None
+    slots_filled_7d: int
+    irregular_pulse_7d: int
+    morning: SlotInfo
+    evening: SlotInfo
+
+
+def is_clean(reading: LoggedReading, routine_start: date, windows: Windows) -> bool:
+    """No flags, no body movement and not before the routine started.
+
+    The period check belongs to the session, not the reading.
+    """
+    return (
+        not reading.flags
+        and not reading.body_movement
+        and bp_day(reading.measured_at, windows) >= routine_start
+    )
+
+
+def _mean(values: list[tuple[float, float]]) -> Mean | None:
+    if not values:
+        return None
+    n = len(values)
+    return Mean(
+        round(sum(v[0] for v in values) / n, 1),
+        round(sum(v[1] for v in values) / n, 1),
+    )
+
+
+def _avg(pairs: list[tuple[float, float]]) -> tuple[float, float]:
+    n = len(pairs)
+    return sum(p[0] for p in pairs) / n, sum(p[1] for p in pairs) / n
+
+
+def _slot_info(
+    sessions: list[Session], day: date, period: Period, windows: Windows, now: datetime
+) -> SlotInfo:
+    start, end = windows.slot_bounds(day, period)
+    readings = sorted(
+        (r for s in sessions if s.day == day and s.period is period for r in s.readings),
+        key=lambda r: r.measured_at,
+    )
+    if readings:
+        status = SlotStatus.FILLED
+    elif now < start:
+        status = SlotStatus.UPCOMING
+    elif now < end:
+        status = SlotStatus.OPEN
+    else:
+        status = SlotStatus.CLOSED
+    return SlotInfo(
+        status=status,
+        window_start=start,
+        window_end=end,
+        first_reading_at=dt_util.as_local(readings[0].measured_at) if readings else None,
+        mean=_mean([(r.systolic, r.diastolic) for r in readings]),
+        reading_count=len(readings),
+    )
+
+
+def summarize(
+    readings: Iterable[LoggedReading],
+    windows: Windows,
+    routine_start: date,
+    now: datetime,
+) -> RoutineSummary:
+    """Baselines and today's slot state; the caller passes imported readings only."""
+    readings = list(readings)
+    now = dt_util.as_local(now)
+    today = bp_day(now, windows)
+    sessions = group_sessions(readings, windows)
+
+    # slot value: mean of the slot's clean session means (a session mean uses its clean readings)
+    slots: dict[tuple[date, Period], list[tuple[float, float]]] = {}
+    filled: set[tuple[date, Period]] = set()
+    for session in sessions:
+        if session.period not in ROUTINE_PERIODS:
+            continue
+        key = (session.day, session.period)
+        filled.add(key)
+        clean = [
+            (r.systolic, r.diastolic)
+            for r in session.readings
+            if is_clean(r, routine_start, windows)
+        ]
+        if clean:
+            slots.setdefault(key, []).append(_avg(clean))
+
+    def baseline(days: int, period: Period | None = None) -> Mean | None:
+        return _mean(
+            [
+                _avg(sessions_means)
+                for (day, p), sessions_means in slots.items()
+                if today - timedelta(days=days) < day <= today
+                and (period is None or p is period)
+            ]
+        )
+
+    in_7d = lambda d: today - timedelta(days=7) < d <= today  # noqa: E731
+    return RoutineSummary(
+        baseline_7d=baseline(7),
+        baseline_30d=baseline(30),
+        morning_7d=baseline(7, Period.MORNING),
+        evening_7d=baseline(7, Period.EVENING),
+        slots_filled_7d=sum(1 for day, _ in filled if in_7d(day)),
+        irregular_pulse_7d=sum(
+            1 for r in readings if r.irregular_pulse and in_7d(bp_day(r.measured_at, windows))
+        ),
+        morning=_slot_info(sessions, today, Period.MORNING, windows, now),
+        evening=_slot_info(sessions, today, Period.EVENING, windows, now),
+    )

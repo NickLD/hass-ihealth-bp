@@ -5,11 +5,14 @@ from datetime import date, datetime, time
 from homeassistant.util import dt as dt_util
 
 from custom_components.ihealth_bp.routine import (
+    Mean,
     Period,
+    SlotStatus,
     Windows,
     bp_day,
     group_sessions,
     period_of,
+    summarize,
     windows_from_options,
 )
 from custom_components.ihealth_bp.storage import (
@@ -113,3 +116,106 @@ async def test_session_period_from_first_reading(hass):
     b = reading(datetime(2026, 10, 21, 12, 31), 121, 81)
     (session,) = group_sessions([a, b], W)
     assert session.period is Period.MORNING
+
+
+START = date(2026, 10, 1)
+NOW = (2026, 10, 21, 14, 0)
+
+
+async def _tz(hass):
+    await hass.config.async_set_time_zone("America/Chicago")
+
+
+async def test_baseline_mean_of_slot_means(hass):
+    await _tz(hass)
+    rs = [
+        reading(datetime(2026, 10, 20, 7, 0), 130, 85),
+        reading(datetime(2026, 10, 20, 7, 3), 126, 81),
+        reading(datetime(2026, 10, 20, 21, 30), 120, 80),
+        reading(datetime(2026, 10, 21, 7, 0), 124, 80),
+    ]
+    s = summarize(rs, W, START, local(*NOW))
+    assert s.baseline_7d == Mean(124.0, 81.0)
+    assert s.morning_7d == Mean(126.0, 81.5)
+    assert s.evening_7d == Mean(120.0, 80.0)
+    assert s.slots_filled_7d == 3
+
+
+async def test_baseline_excludes_unclean(hass):
+    await _tz(hass)
+    good = reading(datetime(2026, 10, 21, 7, 0), 120, 80)
+    bad = [
+        reading(datetime(2026, 10, 20, 7, 0), 200, 100, flags=("caffeine",)),
+        reading(datetime(2026, 10, 19, 7, 0), 200, 100, body_movement=True),
+        reading(datetime(2026, 10, 18, 15, 0), 200, 100),
+        reading(datetime(2026, 9, 30, 7, 0), 200, 100),
+    ]
+    assert summarize([good, *bad], W, START, local(*NOW)).baseline_7d == Mean(120.0, 80.0)
+    mixed = [
+        reading(datetime(2026, 10, 21, 7, 0), 200, 100, body_movement=True),
+        reading(datetime(2026, 10, 21, 7, 2), 110, 70),
+    ]
+    assert summarize(mixed, W, START, local(*NOW)).baseline_7d == Mean(110.0, 70.0)
+
+
+async def test_baseline_none_without_clean_readings(hass):
+    await _tz(hass)
+    rs = [reading(datetime(2026, 10, 21, 7, 0), 130, 85, flags=("ate",))]
+    s = summarize(rs, W, START, local(*NOW))
+    assert s.baseline_7d is None
+    assert s.slots_filled_7d == 1
+
+
+async def test_7_day_window_edges(hass):
+    await _tz(hass)
+    now = local(*NOW)
+    six = reading(datetime(2026, 10, 15, 7, 0), 120, 80)
+    seven = reading(datetime(2026, 10, 14, 7, 0), 140, 90)
+    s = summarize([six, seven], W, START, now)
+    assert s.baseline_7d == Mean(120.0, 80.0)
+    assert s.baseline_30d == Mean(130.0, 85.0)
+    assert s.slots_filled_7d == 1
+    old = reading(datetime(2026, 9, 22, 7, 0), 100, 60)
+    s = summarize([old], W, date(2026, 9, 1), now)
+    assert s.baseline_30d == Mean(100.0, 60.0)
+    assert s.baseline_7d is None
+
+
+async def test_irregular_pulse_7d_counts_all_periods(hass):
+    await _tz(hass)
+    rs = [
+        reading(datetime(2026, 10, 21, 7, 0), 120, 80, irregular_pulse=True),
+        reading(datetime(2026, 10, 20, 15, 0), 120, 80, irregular_pulse=True),
+        reading(datetime(2026, 10, 10, 7, 0), 120, 80, irregular_pulse=True),
+    ]
+    assert summarize(rs, W, START, local(*NOW)).irregular_pulse_7d == 2
+
+
+async def test_slot_status_progression(hass):
+    await _tz(hass)
+    s = summarize([], W, START, local(2026, 10, 21, 2, 0))
+    assert (s.morning.status, s.evening.status) == (SlotStatus.CLOSED, SlotStatus.OPEN)
+    s = summarize([], W, START, local(2026, 10, 21, 4, 0))
+    assert (s.morning.status, s.evening.status) == (SlotStatus.CLOSED, SlotStatus.CLOSED)
+    s = summarize([], W, START, local(2026, 10, 21, 6, 0))
+    assert (s.morning.status, s.evening.status) == (SlotStatus.OPEN, SlotStatus.UPCOMING)
+    s = summarize([], W, START, local(2026, 10, 21, 13, 0))
+    assert s.morning.status is SlotStatus.CLOSED
+    assert s.morning.mean is None and s.morning.reading_count == 0
+    s = summarize(
+        [reading(datetime(2026, 10, 21, 9, 50), 120, 80)], W, START, local(2026, 10, 21, 13, 0)
+    )
+    assert s.morning.status is SlotStatus.FILLED
+    assert s.morning.first_reading_at == local(2026, 10, 21, 9, 50)
+    assert s.morning.reading_count == 1
+    assert s.morning.mean == Mean(120.0, 80.0)
+
+
+async def test_after_midnight_reading_fills_previous_evening(hass):
+    await _tz(hass)
+    r = reading(datetime(2026, 10, 22, 0, 30), 120, 80)
+    s = summarize([r], W, START, local(2026, 10, 22, 0, 31))
+    assert s.evening.status is SlotStatus.FILLED
+    assert s.evening.window_start == local(2026, 10, 21, 21, 0)
+    s = summarize([r], W, START, local(2026, 10, 22, 5, 0))
+    assert (s.morning.status, s.evening.status) == (SlotStatus.OPEN, SlotStatus.UPCOMING)
