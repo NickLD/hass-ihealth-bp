@@ -46,11 +46,16 @@ picked up after the next measurement.
 
 ## Installation
 
-1. In HACS, open the menu → **Custom repositories**, add `https://github.com/NickLD/hass-ihealth-bp`
-   as an **Integration**, then download **iHealth Blood Pressure**.
+[![Open your Home Assistant instance and open this repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=NickLD&repository=hass-ihealth-bp&category=integration)
+
+1. Click the button above (or in HACS, open the menu → **Custom repositories** and add
+   `https://github.com/NickLD/hass-ihealth-bp` as an **Integration**), then download
+   **iHealth Blood Pressure**.
 2. Restart Home Assistant.
 3. Take a measurement. The cuff appears under **Settings → Devices & services → Discovered**; click
-   **Add**. (Or **Add integration → iHealth Blood Pressure** right after waking the cuff.)
+   **Add**. Or, right after waking the cuff:
+
+   [![Open your Home Assistant instance and start setting up iHealth Blood Pressure.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=ihealth_bp)
 
 There is no pairing step. If you used the iHealth app before, you do not need to unpair it, but read
 the [options](#options) about sharing the cuff with the app.
