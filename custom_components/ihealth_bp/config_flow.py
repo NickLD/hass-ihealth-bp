@@ -21,13 +21,9 @@ from homeassistant.core import callback
 from .connection import MODEL, async_read_model
 from .const import CONF_DELETE_AFTER_IMPORT, CONF_REVIEW_MODE, CONF_VARIANT, DOMAIN
 from .kn550bt.variants import Variant, variant_from_service_uuids
+from .rejected import async_get_rejected
 
 DEFAULT_OPTIONS = {CONF_DELETE_AFTER_IMPORT: True, CONF_REVIEW_MODE: False}
-
-UNTESTED_NOTE = (
-    "This cuff uses older firmware ({variant}) that is supported but UNTESTED. "
-    "Please report how it goes, with debug logs, on the project issue tracker."
-)
 
 
 class IHealthBPConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -53,9 +49,13 @@ class IHealthBPConfigFlow(ConfigFlow, domain=DOMAIN):
         variant = variant_from_service_uuids(discovery_info.service_uuids, discovery_info.name)
         if variant is None:
             return self.async_abort(reason="not_supported")
+        rejected = await async_get_rejected(self.hass)
+        if discovery_info.address in rejected:
+            return self.async_abort(reason="not_supported")
         # The cuff is only awake for ~10 s, so check the model now, not at confirm time.
         model = await async_read_model(discovery_info.device, variant)
         if model is not None and model != MODEL:
+            await rejected.async_add(discovery_info.address)
             return self.async_abort(reason="not_supported")
         self._address, self._variant = discovery_info.address, variant
         self.context["title_placeholders"] = {"name": MODEL}
@@ -68,11 +68,17 @@ class IHealthBPConfigFlow(ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             return self._create_entry(self._address, self._variant)
         self._set_confirm_only()
-        note = UNTESTED_NOTE.format(variant=self._variant.value) if self._variant.untested else ""
+        if self._variant.untested:
+            return self.async_show_form(
+                step_id="bluetooth_confirm_untested",
+                description_placeholders={"name": MODEL, "variant": self._variant.value},
+            )
         return self.async_show_form(
-            step_id="bluetooth_confirm",
-            description_placeholders={"name": MODEL, "note": note},
+            step_id="bluetooth_confirm", description_placeholders={"name": MODEL}
         )
+
+    # The same step with the untested-firmware note; HA submits to async_step_<step_id>.
+    async_step_bluetooth_confirm_untested = async_step_bluetooth_confirm
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None

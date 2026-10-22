@@ -1,5 +1,7 @@
 """Discovery, manual setup and options."""
 
+import json
+from pathlib import Path
 from unittest.mock import patch
 
 from homeassistant.config_entries import SOURCE_BLUETOOTH, SOURCE_USER
@@ -11,6 +13,7 @@ from custom_components.ihealth_bp.const import (
     CONF_REVIEW_MODE,
     DOMAIN,
 )
+from custom_components.ihealth_bp.rejected import DATA_REJECTED, STORAGE_KEY
 
 from .conftest import ADDRESS
 from .helpers import AV21_UUID, make_service_info
@@ -19,11 +22,20 @@ READ_MODEL = "custom_components.ihealth_bp.config_flow.async_read_model"
 DISCOVERED = "custom_components.ihealth_bp.config_flow.async_discovered_service_info"
 
 
+STRINGS = Path(__file__).parents[2] / "custom_components" / "ihealth_bp" / "strings.json"
+
+
 async def discover(hass, info, model):
-    with patch(READ_MODEL, return_value=model):
-        return await hass.config_entries.flow.async_init(
+    return (await discover_counting(hass, info, model))[0]
+
+
+async def discover_counting(hass, info, model):
+    """Discover, also returning the async_read_model mock to check whether it connected."""
+    with patch(READ_MODEL, return_value=model) as read_model:
+        result = await hass.config_entries.flow.async_init(
             DOMAIN, context={"source": SOURCE_BLUETOOTH}, data=info
         )
+    return result, read_model
 
 
 async def test_bluetooth_discovery_creates_entry(hass):
@@ -44,15 +56,38 @@ async def test_bluetooth_discovery_aborts_for_other_model(hass):
     assert result["reason"] == "not_supported"
 
 
+async def test_other_model_is_not_connected_to_again(hass):
+    await discover(hass, make_service_info(), "BG5S")
+    result, read_model = await discover_counting(hass, make_service_info(), "KN-550BT")
+    assert result["reason"] == "not_supported"
+    read_model.assert_not_called()
+
+
+async def test_rejection_survives_restart(hass, hass_storage):
+    await discover(hass, make_service_info(), "BG5S")
+    await hass.async_block_till_done()
+    assert hass_storage[STORAGE_KEY]["data"] == {"addresses": [ADDRESS]}
+    hass.data.pop(DATA_REJECTED)
+    result, read_model = await discover_counting(hass, make_service_info(), "KN-550BT")
+    assert result["reason"] == "not_supported"
+    read_model.assert_not_called()
+
+
 async def test_unreadable_model_still_offers_setup(hass):
     result = await discover(hass, make_service_info(), None)
     assert result["step_id"] == "bluetooth_confirm"
+    hass.config_entries.flow.async_abort(result["flow_id"])
+    result, read_model = await discover_counting(hass, make_service_info(), "KN-550BT")
+    assert result["step_id"] == "bluetooth_confirm"
+    read_model.assert_called_once()
 
 
 async def test_legacy_variant_is_flagged_untested(hass):
     result = await discover(hass, make_service_info(uuids=[AV21_UUID]), None)
-    assert result["step_id"] == "bluetooth_confirm"
-    assert "untested" in result["description_placeholders"]["note"].lower()
+    assert result["step_id"] == "bluetooth_confirm_untested"
+    assert result["description_placeholders"]["variant"] == "com.jiuan.BPAV21"
+    step = json.loads(STRINGS.read_text(encoding="utf-8"))["config"]["step"][result["step_id"]]
+    assert "{variant}" in step["description"] and "untested" in step["description"].lower()
     result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
     assert result["data"]["variant"] == "com.jiuan.BPAV21"
 
