@@ -70,6 +70,8 @@ async def test_dst_ambiguous_time_round_trip(hass):
     ambiguous = Reading(datetime(2026, 11, 1, 1, 30, 0), 120, 80, 60, False, False)
     (added,) = await store.async_add([ambiguous], review=False)
     assert added.measured_at.tzinfo is not None
+    # 01:30 happens twice that night; the first (CDT, UTC-5) occurrence is used (fold=0).
+    assert added.measured_at == datetime(2026, 11, 1, 6, 30, 0, tzinfo=UTC)
     assert dt_util.as_local(added.measured_at).replace(tzinfo=None) == ambiguous.time
     reloaded = await new_store(hass)
     assert reloaded.find(added.uid).measured_at == added.measured_at

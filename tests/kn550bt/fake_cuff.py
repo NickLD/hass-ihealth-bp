@@ -59,6 +59,7 @@ class FakeCuff:
     report_count: int | None = None  # lie about the count (empty-reply case)
     errors: dict[int, int] = field(default_factory=dict)  # cmd -> error code (0x38 reply)
     disconnect_on: set[int] = field(default_factory=set)  # cmd -> raise CuffDisconnected
+    disconnect_on_page: int | None = None  # drop the link on this 0x4A request (1-based)
     accept_auth: bool = True
     truncate_after_pages: int | None = None  # later 0x4A replies come back empty
     raw_records: list[bytes] = field(default_factory=list)  # served before `readings`
@@ -75,6 +76,7 @@ class FakeCuff:
         self._ka = b""
         self._r2 = b""
         self._page = 0
+        self._page_requests = 0
         info = dict(INFO)
         info["00002a24-0000-1000-8000-00805f9b34fb"] = self.model
         if self.protocol_string is None:
@@ -127,7 +129,11 @@ class FakeCuff:
         seq, payload = frame[3], frame[4:-1]
         self.received.append(payload)
         cmd, args = payload[1], payload[2:]
-        if cmd in self.disconnect_on:
+        if cmd == 0x4A:
+            self._page_requests += 1
+        if cmd in self.disconnect_on or (
+            cmd == 0x4A and self._page_requests == self.disconnect_on_page
+        ):
             self.is_connected = False
             raise CuffDisconnected(f"link lost on 0x{cmd:02X}")
         if cmd in self.errors:
