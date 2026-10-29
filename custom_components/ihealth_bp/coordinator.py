@@ -39,6 +39,7 @@ from .const import (
     POLL_INTERVAL_S,
 )
 from .derived import bp_category
+from .kn550bt.protocol import Reading
 from .kn550bt.session import (
     Capabilities,
     DeviceInfo,
@@ -421,6 +422,13 @@ class IHealthBPCoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
             hours = {t.measured_at for t in targets if t.status is ReadingStatus.IMPORTED}
             if hours:
                 await self.async_refresh_statistics(hours)
+        self.async_update_listeners()
+
+    async def async_add_reading(self, reading: Reading) -> None:
+        """Log a reading entered by hand, as if the cuff had just handed it over."""
+        added = await self.store.async_add_manual(reading)
+        self.fire_measurement_event(added)
+        await self.async_refresh_statistics({added.measured_at})
         self.async_update_listeners()
 
     async def async_approve_reading(self, uid: str) -> None:

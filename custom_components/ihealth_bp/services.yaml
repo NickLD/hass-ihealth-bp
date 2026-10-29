@@ -1,3 +1,48 @@
+add_reading:
+  fields:
+    device_id:
+      required: true
+      selector:
+        device:
+          integration: ihealth_bp
+    measured_at:
+      required: true
+      selector:
+        datetime:
+    systolic:
+      required: true
+      selector:
+        number:
+          min: 40
+          max: 300
+          unit_of_measurement: mmHg
+          mode: box
+    diastolic:
+      required: true
+      selector:
+        number:
+          min: 20
+          max: 250
+          unit_of_measurement: mmHg
+          mode: box
+    pulse:
+      required: true
+      selector:
+        number:
+          min: 20
+          max: 250
+          unit_of_measurement: bpm
+          mode: box
+    irregular_pulse:
+      required: false
+      default: false
+      selector:
+        boolean:
+    body_movement:
+      required: false
+      default: false
+      selector:
+        boolean:
 delete_reading:
   fields:
     device_id:

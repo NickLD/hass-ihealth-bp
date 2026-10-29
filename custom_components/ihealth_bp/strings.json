@@ -273,6 +273,40 @@
     }
   },
   "services": {
+    "add_reading": {
+      "name": "Add reading",
+      "description": "Adds a reading taken while the cuff's memory could not reach Home Assistant, for example one another app removed from the cuff. It counts like a downloaded reading and fires the measurement event.",
+      "fields": {
+        "device_id": {
+          "name": "Device",
+          "description": "The blood pressure monitor."
+        },
+        "measured_at": {
+          "name": "Measured at",
+          "description": "When the reading was taken (local time)."
+        },
+        "systolic": {
+          "name": "Systolic",
+          "description": "Systolic pressure in mmHg."
+        },
+        "diastolic": {
+          "name": "Diastolic",
+          "description": "Diastolic pressure in mmHg."
+        },
+        "pulse": {
+          "name": "Pulse",
+          "description": "Pulse in beats per minute."
+        },
+        "irregular_pulse": {
+          "name": "Irregular pulse",
+          "description": "The cuff showed the irregular heartbeat symbol."
+        },
+        "body_movement": {
+          "name": "Body movement",
+          "description": "The cuff showed the body movement symbol."
+        }
+      }
+    },
     "delete_reading": {
       "name": "Delete reading",
       "description": "Deletes a blood pressure reading from Home Assistant (its statistics and the Readings list). Events already fired are not undone.",
@@ -347,6 +381,15 @@
     },
     "no_session": {
       "message": "There is no measurement session yet."
+    },
+    "reading_exists": {
+      "message": "There is already a reading at that time."
+    },
+    "reading_in_future": {
+      "message": "A reading cannot be in the future."
+    },
+    "invalid_reading": {
+      "message": "Systolic pressure must be higher than diastolic pressure."
     }
   },
   "selector": {

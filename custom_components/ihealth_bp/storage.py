@@ -36,6 +36,7 @@ class LoggedReading:
     status: ReadingStatus
     flags: tuple[str, ...] = ()
     note: str | None = None
+    manual: bool = False  # entered by hand, not downloaded from the cuff
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -49,6 +50,7 @@ class LoggedReading:
             "status": self.status.value,
             "flags": list(self.flags),
             "note": self.note,
+            "manual": self.manual,
         }
 
     @classmethod
@@ -64,6 +66,7 @@ class LoggedReading:
             status=ReadingStatus(data["status"]),
             flags=tuple(data.get("flags") or ()),
             note=data.get("note"),
+            manual=data.get("manual", False),
         )
 
 
@@ -126,6 +129,27 @@ class CuffStore:
         if added:
             await self._async_save()
         return added
+
+    async def async_add_manual(self, reading: Reading) -> LoggedReading:
+        """Log a reading entered by hand, replacing a deleted one with the same uid."""
+        uid = reading_uid(reading)
+        current = self._readings.get(uid)
+        if current is not None and current.status is not ReadingStatus.DELETED:
+            raise ValueError(uid)
+        logged = LoggedReading(
+            uid=uid,
+            measured_at=cuff_time_to_utc(reading.time),
+            systolic=reading.systolic,
+            diastolic=reading.diastolic,
+            pulse=reading.pulse,
+            irregular_pulse=reading.arrhythmia,
+            body_movement=bool(reading.body_movement),
+            status=ReadingStatus.IMPORTED,
+            manual=True,
+        )
+        self._readings[uid] = logged
+        await self._async_save()
+        return logged
 
     async def async_set_status(self, uid: str, status: ReadingStatus) -> LoggedReading:
         updated = replace(self._readings[uid], status=status)
