@@ -25,6 +25,7 @@ from .const import (
     CONF_DELETE_AFTER_IMPORT,
     CONF_EVENING_END,
     CONF_EVENING_START,
+    CONF_MEASUREMENT_ROUTINE,
     CONF_MORNING_END,
     CONF_MORNING_START,
     CONF_REVIEW_MODE,
@@ -36,7 +37,11 @@ from .kn550bt.variants import Variant, variant_from_service_uuids
 from .rejected import async_get_rejected
 from .routine import windows_from_options
 
-DEFAULT_OPTIONS = {CONF_DELETE_AFTER_IMPORT: True, CONF_REVIEW_MODE: False}
+DEFAULT_OPTIONS = {
+    CONF_DELETE_AFTER_IMPORT: True,
+    CONF_REVIEW_MODE: False,
+    CONF_MEASUREMENT_ROUTINE: True,
+}
 
 
 class IHealthBPConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -127,28 +132,52 @@ class IHealthBPConfigFlow(ConfigFlow, domain=DOMAIN):
 
 
 class IHealthBPOptionsFlow(OptionsFlow):
-    """Options: what to do with readings once imported, and the measurement routine."""
+    """Options: what to do with readings once imported, then the measurement routine if on."""
+
+    def __init__(self) -> None:
+        self._base: dict[str, Any] = {}
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        errors: dict[str, str] = {}
         if user_input is not None:
-            if windows_from_options(user_input).valid():
-                return self.async_create_entry(data=user_input)
-            errors["base"] = "invalid_windows"
-        options = {**DEFAULT_OPTIONS, **self.config_entry.options, **(user_input or {})}
-        windows = windows_from_options(options)
-        routine_start = options.get(CONF_ROUTINE_START) or dt_util.now().date().isoformat()
+            self._base = user_input
+            if user_input[CONF_MEASUREMENT_ROUTINE]:
+                return await self.async_step_routine()
+            # Keep the routine settings, so turning it back on restores them.
+            return self.async_create_entry(data={**self.config_entry.options, **user_input})
+        options = {**DEFAULT_OPTIONS, **self.config_entry.options}
         return self.async_show_form(
             step_id="init",
-            errors=errors,
             data_schema=vol.Schema(
                 {
                     vol.Required(
                         CONF_DELETE_AFTER_IMPORT, default=options[CONF_DELETE_AFTER_IMPORT]
                     ): bool,
                     vol.Required(CONF_REVIEW_MODE, default=options[CONF_REVIEW_MODE]): bool,
+                    vol.Required(
+                        CONF_MEASUREMENT_ROUTINE, default=options[CONF_MEASUREMENT_ROUTINE]
+                    ): bool,
+                }
+            ),
+        )
+
+    async def async_step_routine(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            if windows_from_options(user_input).valid():
+                return self.async_create_entry(data={**self._base, **user_input})
+            errors["base"] = "invalid_windows"
+        options = {**self.config_entry.options, **(user_input or {})}
+        windows = windows_from_options(options)
+        routine_start = options.get(CONF_ROUTINE_START) or dt_util.now().date().isoformat()
+        return self.async_show_form(
+            step_id="routine",
+            errors=errors,
+            data_schema=vol.Schema(
+                {
                     vol.Required(
                         CONF_MORNING_START, default=windows.morning_start.isoformat()
                     ): TimeSelector(),

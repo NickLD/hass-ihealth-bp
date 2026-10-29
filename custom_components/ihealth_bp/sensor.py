@@ -20,13 +20,14 @@ from homeassistant.const import (
     EntityCategory,
     UnitOfPressure,
 )
+from homeassistant.components.sensor import DOMAIN as SENSOR_DOMAIN
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import IHealthBPConfigEntry
 from .coordinator import IHealthBPCoordinator
 from .derived import BP_CATEGORIES, bp_category, mean_arterial_pressure, pulse_pressure
-from .entity import IHealthBPEntity
+from .entity import IHealthBPEntity, routine_entities
 from .routine import Mean, RoutineSummary, SlotInfo, SlotStatus
 from .storage import LoggedReading
 
@@ -199,7 +200,9 @@ async def async_setup_entry(
     coordinator = entry.runtime_data
     entities: list[SensorEntity] = [ReadingSensor(coordinator, d) for d in READING_SENSORS]
     entities += [StateSensor(coordinator, d) for d in STATE_SENSORS]
-    entities += [RoutineSensor(coordinator, d) for d in ROUTINE_SENSORS]
+    entities += routine_entities(
+        hass, coordinator, SENSOR_DOMAIN, [RoutineSensor(coordinator, d) for d in ROUTINE_SENSORS]
+    )
     entities.append(ProtocolSensor(coordinator))
     async_add_entities(entities)
 

@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from homeassistant.core import callback
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity import Entity, EntityDescription
 
@@ -27,3 +28,19 @@ class IHealthBPEntity(Entity):
     @callback
     def _handle_coordinator_update(self) -> None:
         self.async_write_ha_state()
+
+
+def routine_entities(
+    hass: HomeAssistant,
+    coordinator: IHealthBPCoordinator,
+    domain: str,
+    entities: list[IHealthBPEntity],
+) -> list[IHealthBPEntity]:
+    """The routine entities to add: all of them, or none (removing old ones) with it off."""
+    if coordinator.routine_enabled:
+        return entities
+    registry = er.async_get(hass)
+    for entity in entities:
+        if entity_id := registry.async_get_entity_id(domain, DOMAIN, entity.unique_id):
+            registry.async_remove(entity_id)
+    return []

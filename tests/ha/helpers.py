@@ -33,12 +33,15 @@ def make_service_info(
     )
 
 
-async def async_setup_cuff(hass, *, delete=True, review=False, variant="com.jiuan.dev"):
+async def async_setup_cuff(
+    hass, *, delete=True, review=False, variant="com.jiuan.dev", routine=True
+):
     """Set up a config entry for the test cuff; returns (entry, coordinator)."""
     from pytest_homeassistant_custom_component.common import MockConfigEntry
 
     from custom_components.ihealth_bp.const import (
         CONF_DELETE_AFTER_IMPORT,
+        CONF_MEASUREMENT_ROUTINE,
         CONF_REVIEW_MODE,
         DOMAIN,
     )
@@ -47,7 +50,11 @@ async def async_setup_cuff(hass, *, delete=True, review=False, variant="com.jiua
     entry = MockConfigEntry(
         domain=DOMAIN, unique_id=ADDRESS, title="KN-550BT",
         data={"address": ADDRESS, "variant": variant},
-        options={CONF_DELETE_AFTER_IMPORT: delete, CONF_REVIEW_MODE: review},
+        options={
+            CONF_DELETE_AFTER_IMPORT: delete,
+            CONF_REVIEW_MODE: review,
+            CONF_MEASUREMENT_ROUTINE: routine,
+        },
     )
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)

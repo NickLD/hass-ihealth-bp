@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from homeassistant.components.text import TextEntity, TextEntityDescription
+from homeassistant.components.text import DOMAIN as TEXT_DOMAIN, TextEntity, TextEntityDescription
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
@@ -10,7 +10,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from . import IHealthBPConfigEntry
 from .const import DOMAIN
 from .coordinator import IHealthBPCoordinator
-from .entity import IHealthBPEntity
+from .entity import IHealthBPEntity, routine_entities
 
 MAX_NOTE = 255
 
@@ -20,7 +20,10 @@ async def async_setup_entry(
     entry: IHealthBPConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    async_add_entities([SessionNote(entry.runtime_data)])
+    coordinator = entry.runtime_data
+    async_add_entities(
+        routine_entities(hass, coordinator, TEXT_DOMAIN, [SessionNote(coordinator)])
+    )
 
 
 class SessionNote(IHealthBPEntity, TextEntity):

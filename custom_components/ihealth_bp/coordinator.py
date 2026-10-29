@@ -31,6 +31,7 @@ from homeassistant.util import dt as dt_util
 from .connection import MODEL, async_connect
 from .const import (
     CONF_DELETE_AFTER_IMPORT,
+    CONF_MEASUREMENT_ROUTINE,
     CONF_REVIEW_MODE,
     CONF_ROUTINE_START,
     CONF_VARIANT,
@@ -115,6 +116,10 @@ class IHealthBPCoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
     @property
     def review_mode(self) -> bool:
         return self.entry.options.get(CONF_REVIEW_MODE, False)
+
+    @property
+    def routine_enabled(self) -> bool:
+        return self.entry.options.get(CONF_MEASUREMENT_ROUTINE, True)
 
     @property
     def windows(self) -> Windows:
