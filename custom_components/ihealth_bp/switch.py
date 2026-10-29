@@ -5,7 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from homeassistant.components.switch import SwitchEntity, SwitchEntityDescription
+from homeassistant.components.switch import (
+    DOMAIN as SWITCH_DOMAIN,
+    SwitchEntity,
+    SwitchEntityDescription,
+)
 from homeassistant.const import STATE_ON, EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
@@ -15,7 +19,7 @@ from homeassistant.helpers.restore_state import RestoreEntity
 from . import IHealthBPConfigEntry
 from .const import DOMAIN, FLAGS
 from .coordinator import IHealthBPCoordinator
-from .entity import IHealthBPEntity
+from .entity import IHealthBPEntity, routine_entities
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -36,7 +40,11 @@ async def async_setup_entry(
 ) -> None:
     coordinator = entry.runtime_data
     async_add_entities(DisplaySwitch(coordinator, d) for d in SWITCHES)
-    async_add_entities(FlagSwitch(coordinator, flag) for flag in FLAGS)
+    async_add_entities(
+        routine_entities(
+            hass, coordinator, SWITCH_DOMAIN, [FlagSwitch(coordinator, flag) for flag in FLAGS]
+        )
+    )
 
 
 class DisplaySwitch(IHealthBPEntity, SwitchEntity, RestoreEntity):

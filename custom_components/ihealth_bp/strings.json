@@ -25,17 +25,24 @@
     "step": {
       "init": {
         "data": {
-          "delete_after_import": "Delete readings from the cuff after importing them (this is what the iHealth app does — turn off if you still use the app)",
+          "delete_after_import": "Delete readings from the cuff after importing them",
           "review_mode": "Hold new readings for review before importing them",
+          "measurement_routine": "Measurement routine"
+        },
+        "data_description": {
+          "delete_after_import": "Readings are only deleted after Home Assistant has saved them. The iHealth app clears the cuff whenever it syncs, whatever this is set to.",
+          "review_mode": "New readings appear unticked in the Readings list. Tick a reading to import it, or delete it to discard it.",
+          "measurement_routine": "Morning and evening slots, baselines, session flags, note and discard. Turn off to keep only the reading sensors, statistics, event and Readings list; your window settings are kept for later."
+        }
+      },
+      "routine": {
+        "title": "Measurement routine",
+        "data": {
           "morning_start": "Morning window starts (also when a new BP day begins)",
           "morning_end": "Morning window ends",
           "evening_start": "Evening window starts",
           "evening_end": "Evening window ends (may be after midnight)",
           "routine_start": "Count readings toward the baseline from this date"
-        },
-        "data_description": {
-          "delete_after_import": "Readings are only deleted after Home Assistant has saved them. With this off, the cuff keeps its readings (up to 99) for the iHealth app.",
-          "review_mode": "New readings appear unticked in the Readings list. Tick a reading to import it, or delete it to discard it."
         }
       }
     },

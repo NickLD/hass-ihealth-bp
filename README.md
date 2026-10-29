@@ -85,6 +85,11 @@ around that routine. It sends no reminders itself; you build those with ordinary
 [AHA handout](https://cpr.heart.org/-/media/Files/Health-Topics/High-Blood-Pressure/measuringbpathome.pdf),
 [AMA handout](https://map.ama-assn.org/sites/default/files/2024-05/How%20to%20measure%20blood%20pressure%20at%20home.pdf).
 
+The routine is optional. With the **Measurement routine** [option](#options) off, the integration
+creates none of the [routine entities](#routine-entities), the session flag switches, the session
+note or the Discard button, and removes them if they already exist. The reading sensors, statistics,
+event, Readings list and actions stay as they are.
+
 ### Periods and BP days
 
 Every reading gets a period from the time on the cuff (so a late sync does not matter):
@@ -315,6 +320,9 @@ automation:
 - **Hold new readings for review before importing them** (default **off**). New readings arrive
   unticked in the Readings list. Tick one to import it (sensors, statistics and event), or delete it
   to discard it.
+- **Measurement routine** (default **on**). Turn it off to keep only the reading entities; see
+  [Measurement routine](#measurement-routine). When it is on, a second page asks for the settings
+  below. Turning it off keeps them for later.
 - **Morning window starts / ends, Evening window starts / ends.** Defaults 05:00, 12:30, 21:00 and
   03:00. The evening may end after midnight. The windows must not overlap and must fit within 24
   hours from the morning start, which is also when a new BP day begins.

@@ -11,6 +11,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.ihealth_bp.const import (
     CONF_DELETE_AFTER_IMPORT,
+    CONF_MEASUREMENT_ROUTINE,
     CONF_REVIEW_MODE,
     DOMAIN,
 )
@@ -48,7 +49,9 @@ async def test_bluetooth_discovery_creates_entry(hass):
     assert result["title"] == "KN-550BT"
     assert result["data"] == {"address": ADDRESS, "variant": "com.jiuan.dev"}
     assert result["result"].unique_id == ADDRESS
-    assert result["options"] == {CONF_DELETE_AFTER_IMPORT: True, CONF_REVIEW_MODE: False}
+    assert result["options"] == {
+        CONF_DELETE_AFTER_IMPORT: True, CONF_REVIEW_MODE: False, CONF_MEASUREMENT_ROUTINE: True,
+    }
 
 
 async def test_bluetooth_discovery_aborts_for_other_model(hass):
@@ -130,12 +133,19 @@ async def test_options_defaults_and_update(hass, freezer):
     entry.add_to_hass(hass)
     result = await hass.config_entries.options.async_init(entry.entry_id)
     assert result["step_id"] == "init"
+    schema = result["data_schema"].schema
+    assert {str(k): k.default() for k in schema} == {
+        CONF_DELETE_AFTER_IMPORT: True, CONF_REVIEW_MODE: False, CONF_MEASUREMENT_ROUTINE: True,
+    }
     result = await hass.config_entries.options.async_configure(
         result["flow_id"], {CONF_DELETE_AFTER_IMPORT: False, CONF_REVIEW_MODE: True}
     )
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "routine"
+    result = await hass.config_entries.options.async_configure(result["flow_id"], {})
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert entry.options == {
-        CONF_DELETE_AFTER_IMPORT: False, CONF_REVIEW_MODE: True,
+        CONF_DELETE_AFTER_IMPORT: False, CONF_REVIEW_MODE: True, CONF_MEASUREMENT_ROUTINE: True,
         "morning_start": "05:00:00", "morning_end": "12:30:00",
         "evening_start": "21:00:00", "evening_end": "03:00:00",
         "routine_start": today,
@@ -148,6 +158,8 @@ ROUTINE_OPTIONS = {
     "evening_start": "20:00:00", "evening_end": "01:00:00",
     "routine_start": "2026-10-01",
 }
+BASE_INPUT = {CONF_DELETE_AFTER_IMPORT: True, CONF_REVIEW_MODE: False}
+WINDOWS = {k: v for k, v in ROUTINE_OPTIONS.items() if k not in BASE_INPUT}
 
 
 def _routine_entry(hass):
@@ -159,33 +171,47 @@ def _routine_entry(hass):
     return entry
 
 
+async def _routine_step(hass, entry):
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    return await hass.config_entries.options.async_configure(
+        result["flow_id"], {**BASE_INPUT, CONF_MEASUREMENT_ROUTINE: True}
+    )
+
+
 async def test_options_flow_routine_fields(hass):
     entry = _routine_entry(hass)
-    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await _routine_step(hass, entry)
+    assert result["step_id"] == "routine"
     schema = result["data_schema"].schema
-    assert {str(k) for k in schema} == {
-        CONF_DELETE_AFTER_IMPORT, CONF_REVIEW_MODE, "morning_start", "morning_end",
-        "evening_start", "evening_end", "routine_start",
-    }
     defaults = {str(k): k.default() for k in schema}
-    assert defaults == ROUTINE_OPTIONS
+    assert defaults == WINDOWS
     from homeassistant.helpers.selector import DateSelector, TimeSelector
 
     by_name = {str(k): v for k, v in schema.items()}
     assert isinstance(by_name["morning_start"], TimeSelector)
     assert isinstance(by_name["routine_start"], DateSelector)
-    new = {**ROUTINE_OPTIONS, "morning_start": "07:00:00", "routine_start": "2026-10-05"}
+    new = {**WINDOWS, "morning_start": "07:00:00", "routine_start": "2026-10-05"}
     result = await hass.config_entries.options.async_configure(result["flow_id"], new)
     assert result["type"] is FlowResultType.CREATE_ENTRY
-    assert entry.options == new
+    assert entry.options == {**BASE_INPUT, CONF_MEASUREMENT_ROUTINE: True, **new}
 
 
 async def test_options_flow_rejects_invalid_windows(hass):
     entry = _routine_entry(hass)
-    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await _routine_step(hass, entry)
     result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {**ROUTINE_OPTIONS, "evening_start": "10:00:00"}
+        result["flow_id"], {**WINDOWS, "evening_start": "10:00:00"}
     )
     assert result["type"] is FlowResultType.FORM
     assert result["errors"] == {"base": "invalid_windows"}
     assert entry.options == ROUTINE_OPTIONS
+
+
+async def test_options_flow_routine_off_skips_windows_and_keeps_them(hass):
+    entry = _routine_entry(hass)
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {**BASE_INPUT, CONF_MEASUREMENT_ROUTINE: False}
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert entry.options == {**ROUTINE_OPTIONS, CONF_MEASUREMENT_ROUTINE: False}

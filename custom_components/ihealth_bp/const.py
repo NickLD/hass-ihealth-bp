@@ -4,6 +4,7 @@ DOMAIN = "ihealth_bp"
 
 CONF_DELETE_AFTER_IMPORT = "delete_after_import"
 CONF_REVIEW_MODE = "review_mode"
+CONF_MEASUREMENT_ROUTINE = "measurement_routine"
 
 EVENT_MEASUREMENT = "ihealth_bp_measurement"
 SERVICE_DELETE_READING = "delete_reading"
