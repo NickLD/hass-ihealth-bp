@@ -134,6 +134,9 @@
     }
   },
   "services": {
+    "add_reading": {
+      "service": "mdi:plus-circle-outline"
+    },
     "delete_reading": {
       "service": "mdi:delete-outline"
     },

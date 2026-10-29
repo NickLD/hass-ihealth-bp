@@ -242,6 +242,26 @@ The flag names are `caffeine`, `ate`, `exertion`, `after_shower`, `poor_sleep`, 
 Deleting cannot undo an `ihealth_bp_measurement` event that already fired (or automations it
 triggered), and the sensors' short-term history keeps the old value until the recorder purges it.
 
+### Adding a reading by hand
+
+If a reading never reached Home Assistant (for example because the iHealth app took it off the cuff,
+see [troubleshooting](#troubleshooting)), add it with `ihealth_bp.add_reading`. It is treated like a
+reading from the cuff: it joins its session, counts toward its slot and the baseline, updates the
+statistics and fires `ihealth_bp_measurement`. `irregular_pulse` and `body_movement` are optional
+and default to `false`. A naive `measured_at` is in Home Assistant's time zone. The action refuses a
+time in the future, a time that already has a reading, and a systolic pressure that is not above the
+diastolic. Readings added this way are marked as manual in the reading log.
+
+```yaml
+action: ihealth_bp.add_reading
+data:
+  device_id: <your cuff's device id>
+  measured_at: "2026-10-21 21:40:00"
+  systolic: 121
+  diastolic: 78
+  pulse: 70
+```
+
 ### Example: take a second reading
 
 After the first reading of a session, notify the phone and offer to discard the session. The second
@@ -290,7 +310,8 @@ automation:
 - **Delete readings from the cuff after importing them** (default **on**). This is what the iHealth
   app does. Readings are only deleted after Home Assistant has saved them. Turn it off if you still
   use the iHealth app as well; the cuff then keeps up to 99 readings until something else clears it,
-  and Home Assistant skips the ones it already has.
+  and Home Assistant skips the ones it already has. The iHealth app clears the cuff itself whenever
+  it syncs (see [troubleshooting](#troubleshooting)), so this option cannot protect readings from it.
 - **Hold new readings for review before importing them** (default **off**). New readings arrive
   unticked in the Readings list. Tick one to import it (sensors, statistics and event), or delete it
   to discard it.
@@ -313,6 +334,12 @@ measuring. Failures at any other stage are recorded immediately.
 
 - **Never syncs:** check that a proxy with `bluetooth_proxy: active: true` is close enough to the cuff,
   and that the iHealth app is not connected to the cuff at the same moment.
+- **Readings missing:** the iHealth app (checked with version 4.17.0) syncs as soon as it connects to
+  the cuff on its KN-550BT screen, without tapping anything. It downloads every reading, uploads them
+  to iHealth's cloud as unassigned readings, and then deletes them from the cuff, so Home Assistant
+  never sees them. Their upload button only assigns readings that are already uploaded to your
+  account. Keep the app away from the cuff (or remove it), and add any lost readings with
+  [`ihealth_bp.add_reading`](#adding-a-reading-by-hand).
 - **Readings at the wrong time:** the cuff stores local time with no time zone; it is set from Home
   Assistant's time zone on every sync. Home Assistant can only correct the clock when it connects, so
   after a daylight-saving change, or a battery swap that resets the cuff's clock, a reading taken
