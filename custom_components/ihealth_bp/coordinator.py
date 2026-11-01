@@ -275,7 +275,8 @@ class IHealthBPCoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
         )
 
         await session.open()
-        self.state.capabilities = await session.set_clock(dt_util.now().replace(tzinfo=None))
+        now = dt_util.now()
+        self.state.capabilities = await session.set_clock(now.replace(tzinfo=None))
         self.state.battery = await session.battery()
         display = await session.get_display()
         pending = dict(self.store.pending_display)
@@ -302,6 +303,8 @@ class IHealthBPCoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
                 f"incomplete download ({len(readings)} of {download.expected} readings); "
                 "nothing was deleted from the cuff",
             )
+        # Every reading stamped by the old clock is in; later ones carry the clock just set.
+        await self.store.async_set_clock_offset(now.utcoffset())
         if self.delete_after_import and readings:
             await session.delete_readings()
 

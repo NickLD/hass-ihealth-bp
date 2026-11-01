@@ -350,9 +350,12 @@ measuring. Failures at any other stage are recorded immediately.
   [`ihealth_bp.add_reading`](#adding-a-reading-by-hand).
 - **Readings at the wrong time:** the cuff stores local time with no time zone; it is set from Home
   Assistant's time zone on every sync. Home Assistant can only correct the clock when it connects, so
-  after a daylight-saving change, or a battery swap that resets the cuff's clock, a reading taken
-  before the next sync is stamped with the cuff's stale clock. That reading keeps the wrong time;
-  later readings are correct.
+  after a daylight-saving change the first reading is stamped with the old clock. The integration
+  remembers the UTC offset it last set the clock with and reads the cuff's times at that offset, so
+  that reading still lands at the right time. A battery swap resets the cuff's clock to an unknown
+  time, which can't be corrected: a reading taken before the next sync keeps the wrong time (fix it
+  with [`ihealth_bp.delete_reading`](#removing-and-annotating-readings) and
+  [`ihealth_bp.add_reading`](#adding-a-reading-by-hand)); later readings are correct.
 
 The wire protocol is documented in [docs/protocol.md](docs/protocol.md).
 
