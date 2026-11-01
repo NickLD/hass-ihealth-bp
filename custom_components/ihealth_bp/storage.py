@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from collections.abc import Iterable
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from enum import StrEnum
 from typing import Any
 
@@ -74,9 +74,13 @@ def reading_uid(reading: Reading) -> str:
     return f"{reading.time:%Y%m%d%H%M%S}-{reading.systolic}-{reading.diastolic}-{reading.pulse}"
 
 
-def cuff_time_to_utc(naive: datetime) -> datetime:
-    """The cuff keeps naive local time; interpret it in Home Assistant's time zone."""
-    return dt_util.as_utc(naive.replace(tzinfo=dt_util.get_default_time_zone()))
+def cuff_time_to_utc(naive: datetime, offset: timedelta | None = None) -> datetime:
+    """The cuff keeps naive local time; interpret it at the UTC offset its clock was set with.
+
+    Without a known offset, use Home Assistant's time zone at that wall time.
+    """
+    tz = dt_util.get_default_time_zone() if offset is None else timezone(offset)
+    return dt_util.as_utc(naive.replace(tzinfo=tz))
 
 
 class CuffStore:
@@ -90,6 +94,7 @@ class CuffStore:
         )
         self._readings: dict[str, LoggedReading] = {}
         self._pending_display: dict[str, bool] = {}
+        self._clock_offset: timedelta | None = None
 
     async def async_load(self) -> None:
         data = await self._store.async_load() or {}
@@ -97,14 +102,28 @@ class CuffStore:
             r["uid"]: LoggedReading.from_dict(r) for r in data.get("readings", [])
         }
         self._pending_display = dict(data.get("pending_display") or {})
+        seconds = data.get("clock_utc_offset_s")
+        self._clock_offset = None if seconds is None else timedelta(seconds=seconds)
 
     async def _async_save(self) -> None:
+        offset = self._clock_offset
         await self._store.async_save(
             {
                 "readings": [r.as_dict() for r in self._readings.values()],
                 "pending_display": dict(self._pending_display),
+                "clock_utc_offset_s": None if offset is None else int(offset.total_seconds()),
             }
         )
+
+    @property
+    def clock_offset(self) -> timedelta | None:
+        """The UTC offset the cuff's clock was last set with, so its readings carry it."""
+        return self._clock_offset
+
+    async def async_set_clock_offset(self, offset: timedelta) -> None:
+        if offset != self._clock_offset:
+            self._clock_offset = offset
+            await self._async_save()
 
     async def async_add(self, readings: list[Reading], *, review: bool) -> list[LoggedReading]:
         """Log readings not seen before; returns the new ones, oldest first, once saved."""
@@ -116,7 +135,7 @@ class CuffStore:
                 continue
             logged = LoggedReading(
                 uid=uid,
-                measured_at=cuff_time_to_utc(reading.time),
+                measured_at=cuff_time_to_utc(reading.time, self._clock_offset),
                 systolic=reading.systolic,
                 diastolic=reading.diastolic,
                 pulse=reading.pulse,

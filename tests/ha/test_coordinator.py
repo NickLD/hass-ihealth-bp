@@ -1,6 +1,6 @@
 """One sync per cuff wake: import, events, statistics, deletion and failure handling."""
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 
 import pytest
@@ -383,3 +383,44 @@ async def test_coordinator_sessions_and_summary(hass, freezer):
     assert coordinator.windows.morning_start.hour == 5
     assert coordinator.routine_start.isoformat() == dt_util.now().date().isoformat()
     assert coordinator.routine_summary(T0.astimezone()) is not None
+
+
+async def test_reading_on_stale_clock_after_dst_change_uses_last_set_offset(hass, freezer):
+    """The cuff's clock keeps the UTC offset it was last set with until the next sync.
+
+    Night before fall-back: sync at 00:30 CDT sets the clock. Next morning at 08:33 CST
+    the cuff still shows CDT, so it stamps the first reading 09:33; that sync then
+    corrects the clock, and the later readings carry true CST times.
+    """
+    freezer.move_to("2026-11-01 05:30:03+00:00")  # 00:30 CDT
+    _, coordinator = await setup(hass)
+    await sync(hass, coordinator, FakeCuff(readings=[
+        StoredReading(datetime(2026, 11, 1, 0, 29, 55), 121, 62, 66)]))
+    freezer.move_to("2026-11-01 14:34:01+00:00")  # 08:34 CST
+    await sync(hass, coordinator, FakeCuff(readings=[
+        StoredReading(datetime(2026, 11, 1, 9, 33, 56), 123, 69, 63)]))  # stale CDT clock
+    freezer.move_to("2026-11-01 14:38:10+00:00")
+    await sync(hass, coordinator, FakeCuff(readings=[
+        StoredReading(datetime(2026, 11, 1, 8, 38, 5), 109, 69, 62)]))  # clock now CST
+
+    by_sys = {r.systolic: r.measured_at for r in coordinator.store.visible()}
+    assert by_sys[121] == datetime(2026, 11, 1, 5, 29, 55, tzinfo=UTC)
+    assert by_sys[123] == datetime(2026, 11, 1, 14, 33, 56, tzinfo=UTC)
+    assert by_sys[109] == datetime(2026, 11, 1, 14, 38, 5, tzinfo=UTC)
+    assert coordinator.store.latest_imported().systolic == 109
+
+
+async def test_incomplete_download_keeps_previous_clock_offset(hass, freezer):
+    """Readings left on the cuff were stamped with the old clock; keep its offset for them."""
+    freezer.move_to("2026-11-01 05:30:03+00:00")  # 00:30 CDT
+    _, coordinator = await setup(hass)
+    await sync(hass, coordinator, FakeCuff())
+    freezer.move_to("2026-11-01 14:34:01+00:00")  # 08:34 CST
+    stale = [StoredReading(datetime(2026, 11, 1, 9, 30 + i, 0), 120 + i, 70, 60) for i in range(6)]
+    cuff = FakeCuff(readings=list(stale), page_size=3, truncate_after_pages=1)
+    await sync(hass, coordinator, cuff)
+    assert "incomplete" in coordinator.state.failure_reason
+    await sync(hass, coordinator, FakeCuff(readings=list(stale)))
+    times = sorted(r.measured_at for r in coordinator.store.visible())
+    assert times[0] == datetime(2026, 11, 1, 14, 30, tzinfo=UTC)
+    assert times[-1] == datetime(2026, 11, 1, 14, 35, tzinfo=UTC)

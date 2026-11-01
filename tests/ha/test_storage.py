@@ -1,6 +1,6 @@
 """Reading log persistence, de-duplication and time handling."""
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from homeassistant.util import dt as dt_util
 
@@ -141,3 +141,16 @@ async def test_loads_v01_data_without_context(hass, hass_storage):
     store = await new_store(hass)
     assert store.find("u1").flags == ()
     assert store.find("u1").note is None
+
+
+async def test_clock_offset_converts_cuff_time_and_survives_reload(hass):
+    await hass.config.async_set_time_zone("America/Chicago")
+    store = await new_store(hass)
+    assert store.clock_offset is None
+    await store.async_set_clock_offset(timedelta(hours=-5))
+    reloaded = await new_store(hass)
+    assert reloaded.clock_offset == timedelta(hours=-5)
+    # 21 Dec is CST (UTC-6), but the cuff's clock was last set on CDT (UTC-5).
+    winter = Reading(datetime(2026, 12, 21, 9, 0, 0), 120, 80, 60, False, False)
+    (added,) = await reloaded.async_add([winter], review=False)
+    assert added.measured_at == datetime(2026, 12, 21, 14, 0, 0, tzinfo=UTC)
